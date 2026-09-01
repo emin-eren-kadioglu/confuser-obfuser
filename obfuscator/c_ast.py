@@ -53,7 +53,9 @@ def _clang_ast(source: str, filename: str) -> dict[str, Any]:
     extra_arguments = shlex.split(os.environ.get("CONFUSER_CLANG_ARGS", ""))
     with tempfile.TemporaryDirectory(prefix="confuser-clang-") as directory:
         temporary = Path(directory) / "source.c"
-        temporary.write_text(source, encoding="utf-8")
+        # Preserve the source byte-for-byte. Text-mode writes turn LF into CRLF
+        # on Windows, which shifts Clang's byte offsets away from source_bytes.
+        temporary.write_bytes(source.encode("utf-8"))
         try:
             completed = subprocess.run(
                 [
