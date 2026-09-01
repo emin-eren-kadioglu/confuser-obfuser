@@ -65,7 +65,7 @@ function Install-WingetPackage([string]$PackageId, [string]$DisplayName) {
     Write-Step "$DisplayName kuruluyor..."
     & winget install --id $PackageId --exact --source winget --silent --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) {
-        throw "$DisplayName kurulamadı. Winget çıkış kodu: $LASTEXITCODE"
+        throw "$DisplayName kurulamadi. Winget cikis kodu: $LASTEXITCODE"
     }
     Refresh-ProcessPath
 }
@@ -81,19 +81,19 @@ function Test-CCompiler {
 }
 
 function Install-WindowsCBuildTools {
-    Write-Step "Windows C SDK ve linker bileşenleri kuruluyor..."
+    Write-Step "Windows C SDK ve linker bilesenleri kuruluyor..."
     $installerOptions = "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
     & winget install --id "Microsoft.VisualStudio.2022.BuildTools" --exact --source winget --accept-package-agreements --accept-source-agreements --override $installerOptions
     if ($LASTEXITCODE -ne 0) {
-        throw "Visual Studio C++ Build Tools kurulamadı. Winget çıkış kodu: $LASTEXITCODE"
+        throw "Visual Studio C++ Build Tools kurulamadi. Winget cikis kodu: $LASTEXITCODE"
     }
     Refresh-ProcessPath
 }
 
-Write-Step "Confuser Obfuser Windows kurulumu başlıyor..."
+Write-Step "Confuser Obfuser Windows kurulumu basliyor..."
 
 if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-    throw "Winget bulunamadı. Microsoft App Installer'ı güncelleyip install.ps1 dosyasını yeniden çalıştırın."
+    throw "Winget bulunamadi. Microsoft App Installer'i guncelleyip install.ps1 dosyasini yeniden calistirin."
 }
 
 $pythonExe = Find-CompatiblePython
@@ -102,7 +102,7 @@ if (-not $pythonExe) {
     $pythonExe = Find-CompatiblePython
 }
 if (-not $pythonExe) {
-    throw "Python 3.10 veya daha yeni bir sürüm bulunamadı."
+    throw "Python 3.10 veya daha yeni bir surum bulunamadi."
 }
 
 if (-not (Get-Command clang -ErrorAction SilentlyContinue)) {
@@ -115,18 +115,18 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
 Refresh-ProcessPath
 foreach ($tool in @("clang", "go")) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
-        throw "$tool kurulumdan sonra PATH içinde bulunamadı. Yeni bir PowerShell açıp install.ps1 dosyasını yeniden çalıştırın."
+        throw "$tool kurulumdan sonra PATH icinde bulunamadi. Yeni bir PowerShell acip install.ps1 dosyasini yeniden calistirin."
     }
 }
 
 if (-not (Test-CCompiler)) {
     Install-WindowsCBuildTools
     if (-not (Test-CCompiler)) {
-        throw "Clang basit bir C programını derleyemedi. Windows yeniden başlatıldıktan sonra install.ps1 dosyasını tekrar çalıştırın."
+        throw "Clang basit bir C programini derleyemedi. Windows yeniden baslatildiktan sonra install.ps1 dosyasini tekrar calistirin."
     }
 }
 
-Write-Step "İzole uygulama ortamı hazırlanıyor..."
+Write-Step "Izole uygulama ortami hazirlaniyor..."
 New-Item -ItemType Directory -Force -Path $InstallRoot, $UserBin | Out-Null
 & $pythonExe -m venv "$InstallRoot\venv"
 $venvPython = "$InstallRoot\venv\Scripts\python.exe"
@@ -135,7 +135,7 @@ $venvPython = "$InstallRoot\venv\Scripts\python.exe"
 
 $entryPoint = "$InstallRoot\venv\Scripts\confuser-obfuser.exe"
 if (-not (Test-Path $entryPoint)) {
-    throw "confuser-obfuser giriş komutu oluşturulamadı."
+    throw "confuser-obfuser giris komutu olusturulamadi."
 }
 
 $wrapper = "$UserBin\confuser-obfuser.cmd"
@@ -162,18 +162,18 @@ New-Item -ItemType Directory -Path $checkDirectory | Out-Null
 
 Write-Step "Python motoru kontrol ediliyor..."
 & $wrapper "$ProjectDir\examples\demo.py" -o "$checkDirectory\demo.obf.py" --seed 42 --validate
-if ($LASTEXITCODE -ne 0) { throw "Python motor kontrolü başarısız." }
+if ($LASTEXITCODE -ne 0) { throw "Python motor kontrolu basarisiz." }
 
 Write-Step "C/Clang AST motoru kontrol ediliyor..."
 $env:CC = (Get-Command clang).Source
 $env:CLANG = (Get-Command clang).Source
 & $wrapper "$ProjectDir\examples\demo.c" -o "$checkDirectory\demo.obf.c" --seed 42 --validate
-if ($LASTEXITCODE -ne 0) { throw "C motor kontrolü başarısız." }
+if ($LASTEXITCODE -ne 0) { throw "C motor kontrolu basarisiz." }
 
 Write-Step "Go AST motoru kontrol ediliyor..."
 & $wrapper "$ProjectDir\examples\demo.go" -o "$checkDirectory\demo.obf.go" --seed 42 --validate
-if ($LASTEXITCODE -ne 0) { throw "Go motor kontrolü başarısız." }
+if ($LASTEXITCODE -ne 0) { throw "Go motor kontrolu basarisiz." }
 
 Write-Host ""
-Write-Host "✓ Confuser Obfuser kuruldu ve üç motor doğrulandı." -ForegroundColor Green
-Write-Host "Yeni bir PowerShell veya CMD açıp çalıştırın: confuser-obfuser"
+Write-Host "OK - Confuser Obfuser kuruldu ve uc motor dogrulandi." -ForegroundColor Green
+Write-Host "Yeni bir PowerShell veya CMD acip calistirin: confuser-obfuser"
