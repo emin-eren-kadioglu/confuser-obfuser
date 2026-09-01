@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12", "3.14"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Set up Go AST toolchain
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Install package and tests
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[test]'
+
+      - name: Run tests
+        run: python -m pytest -q
+
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Set up Go AST toolchain
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Parse PowerShell installer
+        shell: powershell
+        run: '[scriptblock]::Create((Get-Content -Raw install.ps1)) | Out-Null'
+
+      - name: Run Windows installer in temporary directories
+        shell: powershell
+        run: >-
+          powershell -ExecutionPolicy Bypass -File .\install.ps1
+          -InstallRoot "$env:RUNNER_TEMP\confuser-app"
+          -UserBin "$env:RUNNER_TEMP\confuser-bin"
+
+      - name: Run test suite
+        run: python -m pip install -e '.[test]'; python -m pytest -q
+
+  package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Build distributions
+        run: python -m pip install build && python -m build
