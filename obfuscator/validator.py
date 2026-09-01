@@ -31,12 +31,18 @@ class ValidationResult:
 
 
 def _execute_python(path: Path, argv: list[str], timeout: float) -> ExecutionResult:
+    environment = os.environ.copy()
+    # Windows PowerShell runners commonly expose a cp1252 console. Use a
+    # deterministic UTF-8 pipe so programs containing Turkish or other Unicode
+    # text can be compared instead of failing while printing their output.
+    environment["PYTHONIOENCODING"] = "utf-8"
     completed = subprocess.run(
         [sys.executable, str(path), *argv],
         capture_output=True,
         stdin=subprocess.DEVNULL,
         timeout=timeout,
         check=False,
+        env=environment,
     )
     return ExecutionResult(completed.returncode, completed.stdout, completed.stderr)
 
