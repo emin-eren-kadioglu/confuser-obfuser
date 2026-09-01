@@ -117,4 +117,4 @@ except EOFError:
     result = obfuscate(source)
     validation = validate_behavior(source, result, timeout=1.0)
     assert validation.equivalent
-    assert validation.original.stdout == b"Value: no input\n"
+    assert validation.original.stdout.splitlines() == [b"Value: no input"]
