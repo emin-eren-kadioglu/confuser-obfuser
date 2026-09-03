@@ -3,6 +3,7 @@
 param(
     [string]$InstallRoot = "$env:LOCALAPPDATA\ConfuserObfuser",
     [string]$UserBin = "$env:LOCALAPPDATA\ConfuserObfuser\bin",
+    [string]$ReleaseRef = "v0.3.0",
     [switch]$FromGitHub,
     [switch]$InstallTools, # Compatibility only: confirmation is now the default.
     [switch]$SkipTools
@@ -17,9 +18,13 @@ if ($FromGitHub) {
     New-Item -ItemType Directory -Path $sourceTemp | Out-Null
     try {
         $archive = Join-Path $sourceTemp "source.zip"
-        Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/emin-eren-kadioglu/confuser-obfuser/archive/refs/heads/main.zip" -OutFile $archive
+        $archivePath = if ($ReleaseRef -eq "main") { "refs/heads/main" } else { "refs/tags/$ReleaseRef" }
+        Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/emin-eren-kadioglu/confuser-obfuser/archive/$archivePath.zip" -OutFile $archive
         Expand-Archive -LiteralPath $archive -DestinationPath $sourceTemp
-        $options = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "$sourceTemp\confuser-obfuser-main\install.ps1", "-InstallRoot", $InstallRoot, "-UserBin", $UserBin)
+        $sourceRoot = Get-ChildItem -LiteralPath $sourceTemp -Directory | Select-Object -First 1
+        if ($null -eq $sourceRoot) { throw "Downloaded source archive did not contain a project directory." }
+        $installerPath = Join-Path $sourceRoot.FullName "install.ps1"
+        $options = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $installerPath, "-InstallRoot", $InstallRoot, "-UserBin", $UserBin)
         if ($InstallTools) { $options += "-InstallTools" }
         if ($SkipTools) { $options += "-SkipTools" }
         & powershell @options

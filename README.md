@@ -112,13 +112,13 @@ doğrulandığı anlamına gelmez. Kaynak arşivi için internet gerekir.
 `curl` kurulu olmalıdır.
 
 ```bash
-(set -o pipefail; curl -fsSL https://raw.githubusercontent.com/emin-eren-kadioglu/confuser-obfuser/main/install.sh | sh -s -- --from-github) && export PATH="$HOME/.local/bin:$PATH"
+(set -o pipefail; curl -fsSL https://raw.githubusercontent.com/emin-eren-kadioglu/confuser-obfuser/v0.3.0/install.sh | sh -s -- --from-github) && export PATH="$HOME/.local/bin:$PATH"
 ```
 
 **Windows 10/11 (PowerShell):**
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/emin-eren-kadioglu/confuser-obfuser/main/install.ps1 -ErrorAction Stop))) -FromGitHub
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/emin-eren-kadioglu/confuser-obfuser/v0.3.0/install.ps1 -ErrorAction Stop))) -FromGitHub
 ```
 
 Kurulum bitince aynı terminalde:
@@ -133,7 +133,7 @@ Argümansız çağrı etkileşimli menüyü açar. Doğrudan dosya dönüştürm
 confuser app.py -o app.obf.py --seed 42 --validate
 ```
 
-> Bu komutlar bu deponun `main` dalındaki mevcut kurulum betiğini çalıştırır.
+> Bu komutlar sabit `v0.3.0` sürümündeki kurulum betiğini çalıştırır.
 > Yalnızca güvendiğiniz kaynaklardan kurulum yapın. Kaynak arşivi geçici bir
 > klasöre indirilir ve işlem sonunda silinir; projeyi elle indirmeniz gerekmez.
 
@@ -166,8 +166,8 @@ araç kurulumu başlatmaz; eksik araç soruları kurucuyu tekrar çalıştırın
 Kurucu mesajları ve uygulamanın kendi hata mesajları İngilizcedir; menü
 etiketleri Türkçe kalır. İşletim sistemi/harici araç mesajlarının dili değişebilir.
 
-Güncellemek için varsayılan kurulum satırını tekrar çalıştırın. Yeni uygulama
-kopyası kontrol edildikten sonra başlatıcı değiştirilir; eski uygulama
+Güncellemek için README'deki yeni sürüm etiketini içeren kurulum satırını
+çalıştırın. Yeni uygulama kopyası kontrol edildikten sonra başlatıcı değiştirilir; eski uygulama
 kopyaları otomatik silinmez. Python mevcutsa yerel kaynak klasöründen
 `sh install.sh --no-tools` veya `powershell -File .\install.ps1 -SkipTools`
 ile kurulum internetsiz çalışır. Go AST analizi ve Go derlemesinde otomatik toolchain/modül

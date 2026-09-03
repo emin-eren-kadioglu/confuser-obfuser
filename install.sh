@@ -5,6 +5,7 @@ set -eu
 
 from_github=0
 skip_tools=0
+release_ref=${CONFUSER_RELEASE_REF:-v0.3.0}
 for option in "$@"; do
     case "$option" in
         --from-github) from_github=1 ;;
@@ -17,7 +18,11 @@ done
 if [ "$from_github" -eq 1 ]; then
     source_tmp=$(mktemp -d "${TMPDIR:-/tmp}/confuser-source.XXXXXX")
     trap 'rm -rf -- "$source_tmp"' 0
-    curl -fsSL https://github.com/emin-eren-kadioglu/confuser-obfuser/archive/refs/heads/main.tar.gz -o "$source_tmp/source.tar.gz"
+    case "$release_ref" in
+        main) archive_path=refs/heads/main ;;
+        *) archive_path=refs/tags/$release_ref ;;
+    esac
+    curl -fsSL "https://github.com/emin-eren-kadioglu/confuser-obfuser/archive/$archive_path.tar.gz" -o "$source_tmp/source.tar.gz"
     mkdir "$source_tmp/source"
     tar -xzf "$source_tmp/source.tar.gz" -C "$source_tmp/source" --strip-components=1
     if [ "$skip_tools" -eq 1 ]; then
