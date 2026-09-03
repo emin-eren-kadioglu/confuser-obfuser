@@ -10,6 +10,7 @@ build/
 *.obf.pyw
 *.obf.c
 *.obf.go
+*-obfuscated/
 .coverage
 htmlcov/
 .ruff_cache/

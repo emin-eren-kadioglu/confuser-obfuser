@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import select
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from typing import TextIO
 
 from .languages import SUPPORTED_EXTENSIONS, default_output_path, detect_language
 from .pipeline import ObfuscationConfig, Obfuscator
+from .project import default_project_output, obfuscate_project
 from .validator import validate_behavior
 
 
@@ -53,7 +55,8 @@ class UIState:
     output_path: Path | None = None
     seed: int | None = None
     iterations: int = 1
-    validate: bool = True
+    validate: bool = False
+    project_mode: bool = False
     rename_identifiers: bool = True
     encode_strings: bool = True
     transform_numbers: bool = True
@@ -134,19 +137,22 @@ class TerminalUI:
 
     def _main_menu(self, selected: str) -> None:
         if self.state.input_path:
-            language = detect_language(self.state.input_path).display_name
+            language = "Proje: Python / C / Go" if self.state.project_mode else detect_language(self.state.input_path).display_name
             source = f"{self.state.input_path}  [{language}]"
         else:
             source = "seçilmedi (Python / C / Go otomatik)"
         output = str(self.state.output_path) if self.state.output_path else "otomatik"
         seed = str(self.state.seed) if self.state.seed is not None else "rastgele"
+        input_label = "Kaynak klasör" if self.state.project_mode else "Kaynak dosya"
+        output_label = "Çıktı klasörü" if self.state.project_mode else "Çıktı dosyası"
         rows = (
-            ("1", f"{'Kaynak dosya':<20}: {source}", None),
-            ("2", f"{'Çıktı dosyası':<20}: {output}", None),
+            ("1", f"{input_label:<20}: {source}", None),
+            ("2", f"{output_label:<20}: {output}", None),
             ("3", f"{'Dönüşüm seçenekleri':<20}: yapılandır", None),
             ("4", f"{'Seed':<20}: {seed}", None),
             ("5", f"{'Doğrulama':<20}:", self.state.validate),
             ("6", f"{'Tur sayısı':<20}: {self.state.iterations}", None),
+            ("8", f"{'Çalışma modu':<20}: {'Proje klasörü' if self.state.project_mode else 'Tek dosya'}", None),
         )
         for key, text, status in rows:
             self._write(self._menu_line(key, text, selected, status))
@@ -215,6 +221,22 @@ class TerminalUI:
         self._input(self._style("\n  Devam etmek için Enter...", Style.MUTED))
 
     def _choose_input(self) -> None:
+        if self.state.project_mode:
+            self._write(self._style("  Yalnızca kaynak klasörün yolunu vermen yeterli; alt klasörler otomatik taranır.", Style.MUTED))
+            value = self._input(self._style("  Kaynak proje klasörünün yolu: ", Style.ACCENT))
+            path = self._clean_path(value)
+            if not value or not path.is_dir():
+                self._write(self._style("  Error: Select an existing project directory.", StatusColor.ERROR, Style.BOLD))
+                self._pause()
+                return
+            self.state.input_path = path.absolute()
+            if path.resolve() == path.resolve().parent:
+                self.state.input_path = None
+                self._write(self._style("  Error: Select a project directory, not a filesystem root.", StatusColor.ERROR, Style.BOLD))
+                self._pause()
+                return
+            self.state.output_path = default_project_output(path)
+            return
         value = self._input(self._style("  Python, C veya Go dosyasının yolunu gir: ", Style.ACCENT))
         path = self._clean_path(value)
         if not path.is_file():
@@ -229,6 +251,15 @@ class TerminalUI:
         self.state.output_path = default_output_path(path).resolve()
 
     def _choose_output(self) -> None:
+        if self.state.project_mode:
+            self._write(self._style("  Yalnızca yeni çıktı klasörünün yolunu ver; dosya adları ve uzantılar korunur.", Style.MUTED))
+            self._write(self._style("  Boş bırakırsan kaynak klasörün yanında <proje>-obfuscated kullanılır.", Style.MUTED))
+            value = self._input(self._style("  Çıktı klasörünün yolu: ", Style.ACCENT))
+            if value:
+                self.state.output_path = self._clean_path(value).absolute()
+            elif self.state.input_path:
+                self.state.output_path = default_project_output(self.state.input_path)
+            return
         value = self._input(self._style("  Çıktı dosyasının yolunu gir: ", Style.ACCENT))
         path = self._clean_path(value)
         if not path.suffix and self.state.input_path is not None:
@@ -301,6 +332,9 @@ class TerminalUI:
         self._write(self._style(f"  Tur {iteration}/{total} işleniyor...", Style.MUTED))
 
     def _obfuscate(self) -> None:
+        if self.state.project_mode:
+            self._obfuscate_project()
+            return
         if self.state.input_path is None:
             self._write(self._style("  Error: Select a source file first.", StatusColor.ERROR, Style.BOLD))
             self._pause()
@@ -371,9 +405,51 @@ class TerminalUI:
             self._write(self._style("  ✓ Doğrulama geçti.", StatusColor.SUCCESS))
         self._pause()
 
+    def _obfuscate_project(self) -> None:
+        if self.state.input_path is None:
+            self._write(self._style("  Error: Select a source project directory first.", StatusColor.ERROR, Style.BOLD))
+            self._pause()
+            return
+        try:
+            command = None
+            if self.state.validate:
+                self._write(self._style("  Doğrulama iki geçici proje kopyasında komut çalıştırır; yalnızca güvendiğin kodlarda kullan.", Style.MUTED))
+                command = shlex.split(self._input(self._style("  Proje kökünde çalışacak komut (örnek: python main.py): ", Style.ACCENT)))
+                if not command:
+                    raise ValueError("project validation requires a run/test command")
+            config = ObfuscationConfig(
+                seed=self.state.seed, iterations=self.state.iterations,
+                rename_identifiers=self.state.rename_identifiers,
+                encode_strings=self.state.encode_strings,
+                transform_numbers=self.state.transform_numbers,
+                insert_dead_code=self.state.insert_dead_code,
+            )
+            result = obfuscate_project(
+                self.state.input_path, self.state.output_path, config=config,
+                validate=self.state.validate, validation_command=command,
+                on_progress=lambda path, index, total: self._write(self._style(f"  Dosya {index}/{total}: {path}", Style.MUTED)),
+            )
+        except subprocess.TimeoutExpired:
+            self._write(self._style("  Error: Project validation timed out (60 seconds).", StatusColor.ERROR, Style.BOLD))
+            self._pause()
+            return
+        except (OSError, ValueError, SyntaxError) as error:
+            self._write(self._style(f"  Error: {error}", StatusColor.ERROR, Style.BOLD))
+            self._pause()
+            return
+        self.state.output_path = result.output_path
+        self._write(self._style("  ✓ Proje obfuscation tamamlandı!", StatusColor.SUCCESS, Style.BOLD))
+        self._write(self._style(f"  {len(result.transformed)} kod dosyası dönüştürüldü, {result.copied_files} dosya kopyalandı.", Style.TEXT))
+        self._write(self._style(f"  Çıktı klasörü: {result.output_path}", Style.TEXT))
+        if result.skipped_directories:
+            self._write(self._style("  Atlanan ortam/cache/Git klasörleri: " + ", ".join(map(str, result.skipped_directories)), Style.MUTED))
+        if result.validated:
+            self._write(self._style("  ✓ Doğrulama geçti.", StatusColor.SUCCESS))
+        self._pause()
+
     def run(self) -> int:
         selected = 0
-        keys = ("1", "2", "3", "4", "5", "6", "7", "0")
+        keys = ("1", "2", "3", "4", "5", "6", "8", "7", "0")
         try:
             while True:
                 self._header()
@@ -395,6 +471,10 @@ class TerminalUI:
                     self._choose_iterations()
                 elif choice == "7":
                     self._obfuscate()
+                elif choice == "8":
+                    self.state.project_mode = not self.state.project_mode
+                    self.state.input_path = None
+                    self.state.output_path = None
                 elif choice == "0":
                     self._header()
                     self._write(self._style("  Görüşürüz!", Style.TEXT, Style.BOLD))

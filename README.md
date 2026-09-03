@@ -404,13 +404,17 @@ Ana menüden şu ayarlar yapılabilir:
 5. Doğrulamayı açma veya kapatma
 6. Obfuscation tur sayısını belirleme
 7. Dönüşümü başlatma
+8. Tek dosya / proje klasörü modu arasında geçiş
+
+**Doğrulama program her açıldığında KAPALI başlar.** Yalnızca kendiniz açarsanız
+kod çalıştırılarak karşılaştırılır; bu ayar oturumlar arasında kaydedilmez.
 
 Menüde sol/yukarı tuşları önceki, sağ/aşağı tuşları sonraki seçeneğe gider.
 `Enter` seçili satırı çalıştırır; sayı tuşlarıyla doğrudan seçim de yapılabilir.
 Bu davranış Unix terminallerinde ve Windows konsolunda ayrı klavye okuma
 mekanizmalarıyla desteklenir.
 
-Dosya yolu elle yazılabilir veya terminale sürüklenebilir. Çıktı yolu belirtilmezse:
+Dosya yolu elle yazılabilir veya terminale sürüklenebilir. Tek dosya modunda çıktı yolu belirtilmezse:
 
 ```text
 program.py  → program.obf.py
@@ -422,6 +426,78 @@ Arayüzde başarı mesajları yeşil, hatalar kırmızı gösterilir. `AÇIK` ye
 `KAPALI` kırmızıdır. Dekoratif menü renkleri bu durum renklerinden bağımsızdır.
 `NO_COLOR` tanımlıysa, terminal `dumb` modundaysa veya çıktı bir TTY değilse ANSI
 renkleri otomatik olarak kapatılır.
+
+### Proje klasörünü tek işlemde dönüştürme
+
+Menüde **[8] Çalışma modu** ile **Proje klasörü** seçin. Ardından **[1] Kaynak
+klasör** adımında yalnızca projenin klasör yolunu vermeniz yeterlidir. Alt
+klasörlerdeki `.py`, `.pyw`, `.c` ve `.go` dosyaları otomatik bulunur.
+**[2] Çıktı klasörü** adımında da yalnızca yeni çıktı klasörünün yolunu verin;
+tek tek dosya seçmeyin. **[7] OBFUSCATE ET** işlemi başlatır.
+
+Çıktı yolu verilmezse kaynak klasörün yanında `<proje>-obfuscated` oluşturulur.
+Klasör yapısı, dosya adları ve uzantılar korunur; dosyalara `.obf` eklenmez.
+Örneğin `projem/src/main.py`, `projem-obfuscated/src/main.py` olur.
+Başlık dosyaları (`.h`), `go.mod`, JSON, metin, görsel ve diğer normal dosyalar
+değiştirilmeden kopyalanır. Kaynak projeye yazılmaz. Çıktı klasörü önceden varsa
+üzerine yazılmaz; yeni bir yol seçmeniz gerekir. Kaynak ve çıktı iç içe olamaz.
+Bir dosya dönüştürülemezse yarım bir sonuç klasörü yayımlanmaz; hata dosya yolu
+ile bildirilir. Proje kaynaklarının işlem sırasında değiştirilmemesi önerilir.
+
+Komut satırında klasör yolu tek başına yeterlidir; `--project` isteğe bağlıdır:
+
+```bash
+confuser ./projem
+confuser ./projem --project -o ./projem-obfuscated --seed 42
+```
+
+Git/veri önbelleği/sanal ortam klasörleri (`.git`, `.hg`, `.svn`, `__pycache__`,
+`.venv`, `venv`, `.tox`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`,
+`node_modules`) ve `.pyc`/`.pyo` dosyaları atlanır. Atlanan klasörler sonuçta
+listelenir. Sembolik bağlantı/junction ve özel dosyalar takip edilmez; proje
+modu bunlarda açıklayıcı hata verir. Ayar dosyaları da kopyalandığı için sonucu
+paylaşmadan önce parola/API anahtarı gibi gizli bilgiler açısından inceleyin.
+
+**Dosyalar arası bağlantılar:** Proje modunda Python modül fonksiyonları ve
+parametre adları, C fonksiyon adları, Go paket fonksiyonları/test girişleri
+korunur; yerel değişkenler ve diğer etkin dönüşümler uygulanır. Böylece import,
+isimli parametre, C başlığı ve Go alt paket çağrıları için dosya adlarını veya
+dış arayüzleri değiştirmek gerekmez. Tek dosya modunun isim değiştirme davranışı
+aynı kalır. Bu koruma her dinamik/reflection tabanlı proje için garanti değildir.
+
+**Araç gereksinimi:** Doğrulama kapalıyken programlar çalıştırılmaz, ancak C AST
+isim değiştirme için Clang, Go AST için Go hâlâ gerekir. Go proje analizinde
+yerel modüller/kurulu bağımlılıklar için derleme metaverisi hazırlanabilir;
+otomatik modül/toolchain indirmesi kapalıdır. Eksik araç/bağımlılık açıklayıcı
+hata verir; dil sessizce atlanmaz. Araçları kurmak istemiyorsanız isim değiştirme
+geçişini kapatabilirsiniz (`--no-rename`); bunun koruma gücü daha düşüktür.
+C projelerinde özel include/define bayrakları için `CONFUSER_CLANG_ARGS` kullanın.
+Özel build tag'leri, platforma özgü dosyalar, cgo, Go workspace'leri ve harici
+bağımlılıklar uygun geliştirme ortamı gerektirebilir; tüm build sistemleri
+otomatik olarak yapılandırılmaz.
+
+**İsteğe bağlı proje doğrulaması:** Çok dosyalı bir projenin hangi komutla
+çalışacağını güvenle tahmin etmek mümkün olmadığından, doğrulamayı açarsanız
+çalıştırma/test komutu da istenir. Komut iki geçici kopyanın kökünde çalışır;
+iki çalıştırma da başarılı olmalı ve stdout/stderr eşleşmelidir. Test/derleme
+artıkları çıktı projesine taşınmaz. Bu bir güvenlik sandbox'ı değildir; yalnızca
+güvendiğiniz komutları/kodu kullanın. Zamana, rastgeleliğe veya mutlak yollara
+bağlı çıktılar eşleşmeyebilir. Terminal menüsünde proje doğrulama süresi komut
+başına 60 saniyedir; komut satırında `--timeout` ile ayarlanır.
+
+```bash
+confuser ./projem -o ./kontrol-edilen --validate --timeout 60 --validation-command python main.py
+```
+
+`--validation-command` en son yazılmalıdır; ardından gelen bütün parçalar
+çalıştırılacak komuta aittir. Komut bir shell üzerinden yorumlanmaz: `&&`, pipe
+ve glob ifadeleri otomatik işlenmez. Menüde boşluklu yolları tırnak içine alın;
+Windows yollarında `/` kullanabilirsiniz. Python komutu sisteminizde `python3`
+ise örneği buna göre değiştirin.
+
+Üç dili ve dosyalar arası bağlantıları içeren çalıştırılabilir küçük örnek:
+[`examples/project_demo`](examples/project_demo/README.md). Harici proje veya
+büyük dosya indirmeden `python verify.py` ile orijinal/çıktı sürümlerini deneyebilirsiniz.
 
 ## Komut satırı kullanımı
 
@@ -435,8 +511,9 @@ Tüm seçenekler:
 
 | Seçenek | Açıklama | Varsayılan |
 |---|---|---|
-| `INPUT` | `.py`, `.pyw`, `.c` veya `.go` kaynak dosyası | Zorunlu |
-| `-o`, `--output PATH` | Çıktı dosyası; verilmezse stdout’a yazılır | stdout |
+| `INPUT` | Kaynak dosyası veya proje klasörü | Zorunlu |
+| `-o`, `--output PATH` | Çıktı dosyası veya klasörü | Dosyada stdout; projede `<proje>-obfuscated` |
+| `--project` | Klasör modu; klasör yolu verilince zaten otomatik algılanır | Otomatik |
 | `--seed INTEGER` | Tekrar üretilebilir rastgelelik tohumu | Sistem rastgeleliği |
 | `--iterations N` | Dönüşümün kaç tur uygulanacağı | `1` |
 | `--no-rename` | İsim değiştirme geçişini kapatır | Açık |
@@ -444,6 +521,7 @@ Tüm seçenekler:
 | `--no-numbers` | Sayı dönüştürme geçişini kapatır | Açık |
 | `--no-dead-code` | Sahte kod ekleme geçişini kapatır | Açık |
 | `--validate` | İki programı çalıştırıp davranışını karşılaştırır | Kapalı |
+| `--validation-command ...` | Proje çalıştırma/test komutu; `--validate` ile, en son kullanılır | Yok |
 | `--timeout SECONDS` | Doğrulama alt işlemleri için zaman aşımı | `5.0` |
 
 Python örneği:
@@ -684,7 +762,8 @@ python_obfuscator/
   namespace erişimleri tespit edilirse isim değiştirme dosya için atlanabilir.
 - Metadata erişimi ve henüz desteklenmeyen type-parameter scope’ları
   konservatif korumayı tetikler.
-- Araç tek dosya dönüştürür; başka modüllerdeki import ifadelerini güncellemez.
+- Tek dosya modu başka modüllerdeki import ifadelerini güncellemez. Proje modu
+  tüm dosyaları tarar ve modül fonksiyonlarını/parametre sözleşmelerini korur.
 
 ### C
 
@@ -694,8 +773,8 @@ python_obfuscator/
   yeniden adlandırılır; `main` korunur.
 - Struct alanları, typedef’ler ve callback referansları yazılış benzerliğine
   bakılarak yanlışlıkla değiştirilmez.
-- Dönüşüm tek translation unit odaklıdır. Başka `.c` dosyalarının kullandığı
-  dış semboller otomatik olarak görülemez.
+- Her C dosyası kendi translation unit'i içinde analiz edilir; proje modunda
+  fonksiyon adları korunarak diğer `.c`/`.h` dosyalarıyla bağlantı sürdürülür.
 - Makrolarla üretilen veya include dosyalarından gelen declaration’lar
   konservatif biçimde işlenir ya da korunur.
 
@@ -707,7 +786,7 @@ python_obfuscator/
 - Aynı klasör ve paketteki kardeş `.go` dosyaları incelenir; kardeş dosyaların
   kullandığı semboller korunur.
 - Başka paketlerin kullandığı exported API’ler tek dosya analizinden kesin
-  olarak bilinemeyebilir.
+  olarak bilinemeyebilir; proje modu tüm paket fonksiyon adlarını korur.
 - Import yolları ve struct tag’leri string geçişinin dışında tutulur.
 
 Dışarıya açık C veya Go kütüphane API’lerinde isimleri korumak için

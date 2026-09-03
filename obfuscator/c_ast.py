@@ -87,7 +87,7 @@ def _clang_ast(source: str, filename: str) -> dict[str, Any]:
         raise ValueError("clang returned an invalid AST response") from error
 
 
-def rename_c_identifiers(source: str, filename: str, rng: random.Random) -> str:
+def rename_c_identifiers(source: str, filename: str, rng: random.Random, *, preserve_interfaces: bool = False) -> str:
     """Rename C functions, parameters and local variables through Clang bindings.
 
     Clang declaration IDs connect each reference to its actual declaration, so
@@ -109,7 +109,7 @@ def rename_c_identifiers(source: str, filename: str, rng: random.Random) -> str:
         if _direct_offset(function.get("loc")) is None:
             continue
         function_name = function.get("name")
-        if isinstance(function_name, str) and function_name != "main":
+        if isinstance(function_name, str) and function_name != "main" and not preserve_interfaces:
             function_name_map.setdefault(function_name, _fresh_name(rng, used))
         for node in _walk(function):
             if node.get("kind") not in {"ParmVarDecl", "VarDecl"}:

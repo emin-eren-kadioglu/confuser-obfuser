@@ -322,14 +322,15 @@ def obfuscate_native(
     transform_numbers: bool,
     insert_dead_code: bool,
     filename: str = "<unknown>",
+    preserve_interfaces: bool = False,
 ) -> str:
     """Apply one structural pass round to C or Go source."""
     if language not in {SourceLanguage.C, SourceLanguage.GO}:
         raise ValueError(f"native transformer does not support {language.value}")
     if rename_identifiers and language is SourceLanguage.C:
-        source = rename_c_identifiers(source, filename, rng)
+        source = rename_c_identifiers(source, filename, rng, preserve_interfaces=preserve_interfaces)
     elif rename_identifiers and language is SourceLanguage.GO:
-        source = rename_go_identifiers(source, filename, rng)
+        source = rename_go_identifiers(source, filename, rng, preserve_interfaces=preserve_interfaces)
     tokens = tokenize(source, language)
     _matching_pairs(tokens)
     if encode_strings:

@@ -158,6 +158,9 @@ class _Renamer(ast.NodeTransformer):
 
 
 class RenameIdentifiersPass(ObfuscationPass):
+    def __init__(self, *, preserve_interfaces: bool = False) -> None:
+        self.preserve_interfaces = preserve_interfaces
+
     def apply(self, tree: ast.Module, rng: random.Random) -> ast.Module:
         analysis = analyze_scopes(tree)
         # Reflective access can refer to identifiers via strings or metadata.
@@ -171,6 +174,12 @@ class RenameIdentifiersPass(ObfuscationPass):
             return tree
 
         calls = analyze_calls(tree, analysis)
+        if self.preserve_interfaces:
+            # Other files may import any module function or call a returned
+            # callable by keyword. Only local bindings are private to this file.
+            analysis.root.excluded.update(analysis.root.bound)
+            for scope in analysis.by_node.values():
+                scope.excluded.update(scope.parameters)
         # Class bodies resolve their namespace at runtime (e.g. ``f = f`` can
         # read a global before assigning an attribute). Preserve collisions.
         class_names = set().union(*(

@@ -1,5 +1,9 @@
 # Önce / sonra örnekleri
 
+Çok dosyalı klasör modu için ayrıca [`project_demo`](project_demo/README.md)
+örneği bulunur: Python paketleri, C başlığı ve birden fazla kaynak dosyası,
+Go yerel modülü ve testi birlikte denenebilir.
+
 Bu klasördeki üç küçük program, Confuser Obfuser'ın desteklediği diller için
 okunabilir kaynak örnekleridir. `obfuscated/` klasöründeki karşılıkları bütün
 dönüşümler açıkken, tek tur ve `seed=42` kullanılarak araç tarafından üretildi.

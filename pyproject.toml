@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "confuser-obfuser"
-version = "0.2.0"
+version = "0.3.0"
 description = "A structural Python, C and Go source obfuscator with an interactive terminal UI"
 readme = "README.md"
 requires-python = ">=3.10"

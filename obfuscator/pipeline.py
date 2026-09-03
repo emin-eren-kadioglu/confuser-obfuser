@@ -31,6 +31,7 @@ class ObfuscationConfig:
     transform_numbers: bool = True
     insert_dead_code: bool = True
     iterations: int = 1
+    preserve_interfaces: bool = False
 
     def __post_init__(self) -> None:
         if type(self.iterations) is not int or self.iterations < 1:
@@ -44,7 +45,7 @@ class Obfuscator:
     def passes(self) -> list[ObfuscationPass]:
         selected: list[ObfuscationPass] = []
         if self.config.rename_identifiers:
-            selected.append(RenameIdentifiersPass())
+            selected.append(RenameIdentifiersPass(preserve_interfaces=self.config.preserve_interfaces))
         if self.config.encode_strings:
             selected.append(EncodeStringsPass())
         if self.config.transform_numbers:
@@ -96,6 +97,7 @@ class Obfuscator:
                         transform_numbers=self.config.transform_numbers,
                         insert_dead_code=self.config.insert_dead_code,
                         filename=filename,
+                        preserve_interfaces=self.config.preserve_interfaces,
                     )
             except RecursionError as error:
                 raise ValueError(

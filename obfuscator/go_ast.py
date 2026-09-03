@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 
-def rename_go_identifiers(source: str, filename: str, rng: random.Random) -> str:
+def rename_go_identifiers(source: str, filename: str, rng: random.Random, *, preserve_interfaces: bool = False) -> str:
     go = shutil.which("go")
     if go is None:
         raise ValueError("Go identifier renaming requires an installed Go toolchain in PATH; no download was started")
@@ -23,10 +23,11 @@ def rename_go_identifiers(source: str, filename: str, rng: random.Random) -> str
             "source": source,
             "filename": actual_filename,
             "seed": rng.getrandbits(63),
+            "project": preserve_interfaces,
         }
     ).encode("utf-8")
     environment = os.environ.copy()
-    environment.update(GO111MODULE="off", GOTOOLCHAIN="local", GOPROXY="off", GOSUMDB="off")
+    environment.update(GO111MODULE="auto" if preserve_interfaces else "off", GOTOOLCHAIN="local", GOPROXY="off", GOSUMDB="off", GOWORK="off")
     try:
         completed = subprocess.run(
             [go, "run", str(helper)],

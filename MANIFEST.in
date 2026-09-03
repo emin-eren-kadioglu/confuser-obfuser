@@ -6,4 +6,5 @@ include install.sh
 include install.ps1
 recursive-include examples *.py
 recursive-include examples *.c *.go
+recursive-include examples/project_demo *.md *.json *.h *.mod *.txt
 recursive-include tests *.py

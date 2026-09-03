@@ -11,7 +11,9 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -21,6 +23,7 @@ type request struct {
 	Source   string `json:"source"`
 	Filename string `json:"filename"`
 	Seed     uint64 `json:"seed"`
+	Project  bool   `json:"project"`
 }
 
 type generator struct {
@@ -81,7 +84,7 @@ func loadPackage(fileset *token.FileSet, input request) (*ast.File, []*ast.File,
 	targetPath, _ := filepath.Abs(input.Filename)
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || strings.Contains(name, ".obf.go") {
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || (strings.HasSuffix(name, "_test.go") && !strings.HasSuffix(input.Filename, "_test.go")) || strings.Contains(name, ".obf.go") {
 			continue
 		}
 		candidatePath, _ := filepath.Abs(filepath.Join(directory, name))
@@ -116,6 +119,20 @@ func transform(input request) ([]byte, error) {
 		Error: func(problem error) {
 			typeErrors = append(typeErrors, problem)
 		},
+	}
+	if input.Project {
+		// Let Go resolve module-local and cached imports in their real project.
+		// The bridge disables module/toolchain downloads. This compiles export
+		// data as needed, but never executes the user's program or its tests.
+		configuration.Importer = importer.ForCompiler(fileset, "gc", func(path string) (io.ReadCloser, error) {
+			command := exec.Command("go", "list", "-export", "-f", "{{.Export}}", path)
+			command.Dir = filepath.Dir(input.Filename)
+			output, err := command.Output()
+			if err != nil {
+				return nil, fmt.Errorf("cannot resolve import %s offline: %w", path, err)
+			}
+			return os.Open(strings.TrimSpace(string(output)))
+		})
 	}
 	checkedPackage, checkError := configuration.Check(target.Name.Name, fileset, files, information)
 	if checkError != nil {
@@ -161,6 +178,9 @@ func transform(input request) ([]byte, error) {
 		}
 		switch value := object.(type) {
 		case *types.Func:
+			if input.Project {
+				continue // Package APIs, test entry points and cross-file calls.
+			}
 			signature, ok := value.Type().(*types.Signature)
 			if !ok || signature.Recv() != nil || value.Name() == "main" || value.Name() == "init" {
 				continue

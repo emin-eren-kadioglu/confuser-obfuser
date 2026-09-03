@@ -108,6 +108,7 @@ class TerminalUITests(unittest.TestCase):
             source.write_text("print('hello')\n", encoding="utf-8")
             ui = self.colored_ui()
             ui.state.input_path = source
+            ui.state.validate = True
             with patch.object(ui, "_pause"), patch.object(Style, "ACCENT", "\033[35m"):
                 ui._obfuscate()
             output = ui.stdout.getvalue()
@@ -129,6 +130,7 @@ class TerminalUITests(unittest.TestCase):
             source.write_text("print('hello')\n", encoding="utf-8")
             ui = self.colored_ui()
             ui.state.input_path = source
+            ui.state.validate = True
             with patch.object(ui, "_pause"), patch("obfuscator.terminal_ui.validate_behavior") as validate:
                 validate.return_value.equivalent = False
                 ui._obfuscate()
