@@ -30,6 +30,7 @@ classifiers = [
 dependencies = []
 
 [project.scripts]
+confuser = "obfuscator.cli:main"
 py-obfuscate = "obfuscator.cli:main"
 confuser-obfuser = "obfuscator.cli:main"
 

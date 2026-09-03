@@ -64,7 +64,7 @@ eşleştirilir.
 - Ayarlanabilir obfuscation tur sayısı; varsayılan `1`
 - Orijinal ve dönüştürülmüş programı çalıştırarak davranış karşılaştırması
 - Renkli durum mesajları ve yön tuşlarıyla kullanılabilen terminal menüsü
-- macOS, Linux ve Windows için kurulum betikleri
+- Windows ve Linux için tek satırla kurulum ve `confuser` komutu
 - Harici Python paketi gerektirmeyen çekirdek uygulama
 
 ## Desteklenen diller ve motorlar
@@ -85,8 +85,9 @@ olarak gösterir. Kullanıcının ayrıca dil seçmesine gerek yoktur.
 - Go isim değiştirme ve Go doğrulaması için Go 1.22 veya üzeri
 - UTF-8 kaynak dosyaları
 
-Kurulum betikleri bu araçları kontrol eder ve desteklenen işletim sistemlerinde
-eksik olanları kurmaya çalışır.
+Tek komutluk kurulum gerektiğinde Python'u otomatik indirir. C ve Go için
+Clang ve Go araçlarının ayrıca kurulu ve PATH üzerinde olması gerekir.
+Mevcut kurulum betikleri bu araçları da kontrol edip eksikleri kurmayı dener.
 
 ## Dönüşümler
 
@@ -121,7 +122,7 @@ durumlarda ilgili parametre adları korunur.
 Bu geçişi kapatmak için:
 
 ```bash
-confuser-obfuser app.py -o app.obf.py --no-rename
+confuser app.py -o app.obf.py --no-rename
 ```
 
 ### 2. Stringleri parçalama ve kodlama
@@ -257,66 +258,71 @@ python3 app.obf.py
 
 ## Kurulum
 
-### macOS ve Linux
+### Tek komutla kurulum
 
-Proje klasöründe:
+Projeyi indirmeniz, Git veya Python kurmanız gerekmez. Aşağıdaki tek satırı
+terminalinize yapıştırın. Yönetici yetkisi gerekmez; internet bağlantısı gerekir.
+Kurulum, [uv](https://docs.astral.sh/uv/getting-started/installation/) aracını ve
+gerektiğinde Python 3.14'ü indirir, uygulamayı izole bir ortama kurar ve komut
+dizinini kullanıcı PATH'ine ekler. Sistem Python'una dokunmaz.
+
+**Linux (Bash/Zsh; macOS'ta da kullanılabilir):**
+
+`curl` kurulu olmalıdır.
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh && . "$HOME/.local/bin/env" && uv tool install --python 3.14 --reinstall https://github.com/emin-eren-kadioglu/confuser-obfuser/archive/refs/heads/main.zip
+```
+
+**Windows 10/11 (PowerShell):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | iex"; if ($LASTEXITCODE -eq 0) { $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"; uv tool install --python 3.14 --reinstall https://github.com/emin-eren-kadioglu/confuser-obfuser/archive/refs/heads/main.zip }
+```
+
+Kurulum bitince aynı terminalde:
+
+```bash
+confuser
+```
+
+Argümansız çağrı etkileşimli menüyü açar. Doğrudan dosya dönüştürmek için:
+
+```bash
+confuser app.py -o app.obf.py --seed 42 --validate
+```
+
+> Bu komutlar internetten uv'nin resmî kurucusunu çalıştırır ve bu deponun
+> `main` dalındaki kodu kurar. Yalnızca güvendiğiniz kaynaklardan kurulum yapın.
+> Özel uv/XDG kurulum dizinleri ayarladıysanız PATH adımını kendi dizininize
+> uyarlayın; yukarıdaki komutlar varsayılan kullanıcı dizinlerini kullanır.
+
+Python desteği kurulumla hazırdır. C için Clang, Go için Go SDK ayrıca gerekir;
+Windows'ta C doğrulaması için uyumlu bir C bağlayıcısı/SDK de gereklidir.
+
+Güncellemek için aynı kurulum satırını tekrar çalıştırın. Kaldırmak için
+`uv tool uninstall confuser-obfuser` kullanın; bu işlem uv'yi veya Python'u silmez.
+
+### Mevcut betiklerle kurulum (isteğe bağlı)
+
+Clang ve Go'nun da kontrol edilip eksikse kurulmasını istiyorsanız, projeyi
+indirdikten sonra mevcut betikleri kullanabilirsiniz. Bu yöntem paket yöneticisine
+bağlı olarak yönetici yetkisi isteyebilir.
+
+macOS/Linux:
 
 ```bash
 sh install.sh
 ```
 
-Kurulum betiği:
-
-- macOS’ta Homebrew’ü, Linux’ta `apt`, `dnf` veya `pacman` paket yöneticisini kullanır.
-- Python, Clang ve Go araçlarını kontrol eder.
-- Uygulamayı `~/.local/share/confuser-obfuser/venv` altında izole eder.
-- `~/.local/bin/confuser-obfuser` çalıştırıcısını oluşturur.
-- Gerekirse kullanıcı PATH ayarını shell profiline ekler.
-- Python, C ve Go motorlarını gerçek örneklerle obfuscate edip doğrular.
-
-Kurulumdan sonra yeni bir terminal açın:
-
-```bash
-confuser-obfuser
-```
-
-Komut bulunamazsa mevcut terminal için:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Kurulum konumları ortam değişkenleriyle özelleştirilebilir:
-
-```bash
-CONFUSER_INSTALL_ROOT=/opt/confuser-obfuser \
-CONFUSER_USER_BIN="$HOME/bin" \
-sh install.sh
-```
-
-### Windows 10/11
-
-PowerShell’i proje klasöründe açın:
+Windows PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-Windows kurucusu:
-
-- Winget üzerinden gerekirse Python, LLVM/Clang ve Go’yu kurar.
-- Clang basit bir C programını bağlayamıyorsa Visual Studio C++ Build Tools
-  bileşenini kurmayı dener.
-- Uygulamayı `%LOCALAPPDATA%\ConfuserObfuser` altında izole eder.
-- `confuser-obfuser.cmd` komutunu oluşturur ve kullanıcı PATH’ine ekler.
-- Üç dil motorunu gerçek örneklerle test eder.
-
-Yeni bir PowerShell veya CMD açtıktan sonra:
-
-```powershell
-confuser-obfuser
-confuser-obfuser app.go -o app.obf.go --seed 42 --validate
-```
+Bu eski kurulum yöntemi terminale `confuser-obfuser` çalıştırıcısını ekler.
+Yeni, kısa `confuser` komutu için yukarıdaki tek komutluk kurulumu kullanın.
 
 ### Pip ile kurulum
 
@@ -332,9 +338,10 @@ Geliştirme kurulumu:
 python3 -m pip install -e '.[dev]'
 ```
 
-Kurulum iki eşdeğer komut oluşturur:
+Paket kurulumu üç eşdeğer komut oluşturur; eski adlar uyumluluk için korunur:
 
 ```bash
+confuser
 confuser-obfuser
 py-obfuscate
 ```
@@ -346,7 +353,7 @@ Argümansız çağrı etkileşimli menüyü, argümanlı çağrı CLI modunu aç
 Arayüzü açmak için:
 
 ```bash
-confuser-obfuser
+confuser
 ```
 
 Ana menüden şu ayarlar yapılabilir:
@@ -382,7 +389,7 @@ renkleri otomatik olarak kapatılır.
 Genel biçim:
 
 ```text
-confuser-obfuser INPUT [-o OUTPUT] [SEÇENEKLER]
+confuser INPUT [-o OUTPUT] [SEÇENEKLER]
 ```
 
 Tüm seçenekler:
@@ -403,33 +410,33 @@ Tüm seçenekler:
 Python örneği:
 
 ```bash
-confuser-obfuser examples/demo.py -o demo.obf.py --seed 42 --validate
+confuser examples/demo.py -o demo.obf.py --seed 42 --validate
 ```
 
 C örneği:
 
 ```bash
-confuser-obfuser examples/demo.c -o demo.obf.c --seed 42 --validate
+confuser examples/demo.c -o demo.obf.c --seed 42 --validate
 cc demo.obf.c -o demo && ./demo
 ```
 
 Go örneği:
 
 ```bash
-confuser-obfuser examples/demo.go -o demo.obf.go --seed 42 --validate
+confuser examples/demo.go -o demo.obf.go --seed 42 --validate
 go run demo.obf.go
 ```
 
 Yalnızca isim ve sayı dönüşümü kullanmak için:
 
 ```bash
-confuser-obfuser app.py -o app.obf.py --no-strings --no-dead-code
+confuser app.py -o app.obf.py --no-strings --no-dead-code
 ```
 
 Çıktıyı dosya yerine terminale yazmak için `-o` kullanılmaz:
 
 ```bash
-confuser-obfuser app.py --seed 42
+confuser app.py --seed 42
 ```
 
 ### Özel C derleme seçenekleri
@@ -439,14 +446,14 @@ Ek include dizinleri, define veya dil standardı gerekiyorsa
 
 ```bash
 CONFUSER_CLANG_ARGS='-std=c11 -I./include -DFEATURE=1' \
-confuser-obfuser app.c -o app.obf.c --validate
+confuser app.c -o app.obf.c --validate
 ```
 
 Alternatif Clang çalıştırıcısı `CLANG`, doğrulama derleyicisi `CC` ile seçilebilir:
 
 ```bash
 CLANG=/opt/llvm/bin/clang CC=clang \
-confuser-obfuser app.c -o app.obf.c --validate
+confuser app.c -o app.obf.c --validate
 ```
 
 ## Seed ve rastgelelik
@@ -456,8 +463,8 @@ aynı araç sürümü, aynı seçenekler ve aynı seed kullanıldığında aynı
 üretilir.
 
 ```bash
-confuser-obfuser app.py -o first.py --seed 42
-confuser-obfuser app.py -o second.py --seed 42
+confuser app.py -o first.py --seed 42
+confuser app.py -o second.py --seed 42
 ```
 
 Seed değişirse şunlar değişebilir:
@@ -478,7 +485,7 @@ Varsayılan tur sayısı `1`’dir. `--iterations` ile önceki turun çıktısı
 girdi olarak işlenebilir:
 
 ```bash
-confuser-obfuser app.py -o app.obf.py --seed 42 --iterations 3 --validate
+confuser app.py -o app.obf.py --seed 42 --iterations 3 --validate
 ```
 
 Her turda aynı seed ile yeni bir dönüşüm zinciri başlatılır. Yalnızca son çıktı
@@ -721,7 +728,7 @@ Program kullanıcı girdisi bekliyor veya uzun sürüyor olabilir. CLI’da sür
 artırılabilir:
 
 ```bash
-confuser-obfuser app.py -o app.obf.py --validate --timeout 30
+confuser app.py -o app.obf.py --validate --timeout 30
 ```
 
 Etkileşimli menünün doğrulama süresi 5 saniyedir. Girdi bekleyen programlarda
@@ -743,7 +750,7 @@ Aynı durum `program.obf.c` ve `program.obf.go` için de geçerlidir.
 Tur sayısını azaltın veya string dönüşümünü kapatın:
 
 ```bash
-confuser-obfuser app.py -o app.obf.py --iterations 1 --no-strings
+confuser app.py -o app.obf.py --iterations 1 --no-strings
 ```
 
 ### Dinamik kod isim değiştirmeden sonra bozulabilir mi?

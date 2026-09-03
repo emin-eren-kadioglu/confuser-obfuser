@@ -14,7 +14,7 @@ from .validator import validate_behavior
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="confuser-obfuser",
+        prog="confuser",
         description="Obfuscate Python, C or Go source; language is detected from the extension.",
     )
     parser.add_argument("input", type=Path, help="input .py, .pyw, .c or .go file")

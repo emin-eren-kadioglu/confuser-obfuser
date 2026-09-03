@@ -30,6 +30,8 @@ jobs:
           cache: false
       - name: Install package and tests
         run: python -m pip install --upgrade pip && python -m pip install -e '.[test]'
+      - name: Check confuser command
+        run: confuser --help && confuser examples/demo.py -o "$RUNNER_TEMP/demo.obf.py" --seed 42 --validate
       - name: Run tests
         run: python -m pytest -q
 
@@ -59,6 +61,11 @@ jobs:
           -UserBin "$env:RUNNER_TEMP\confuser-bin"
       - name: Run test suite
         run: python -m pip install -e '.[test]'; python -m pytest -q
+      - name: Check confuser command
+        run: |
+          confuser --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          confuser examples/demo.py -o "$env:RUNNER_TEMP/demo.obf.py" --seed 42 --validate
 
   package:
     runs-on: ubuntu-latest
