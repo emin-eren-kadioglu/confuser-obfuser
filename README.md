@@ -33,9 +33,9 @@ eşleştirilir.
 
 - [Öne çıkan özellikler](#öne-çıkan-özellikler)
 - [Desteklenen diller ve motorlar](#desteklenen-diller-ve-motorlar)
+- [Kurulum](#kurulum)
 - [Dönüşümler](#dönüşümler)
 - [Hızlı başlangıç](#hızlı-başlangıç)
-- [Kurulum](#kurulum)
 - [Etkileşimli terminal arayüzü](#etkileşimli-terminal-arayüzü)
 - [Komut satırı kullanımı](#komut-satırı-kullanımı)
 - [Seed ve rastgelelik](#seed-ve-rastgelelik)
@@ -89,6 +89,135 @@ Python kullanımı için C/Go araçları gerekli değildir. Tek komutluk kurulum
 mevcut araçları kullanır; eksik araçları indirmeden önce tek tek onay ister.
 Ek Python paketi indirmez. C için yalnızca GCC bulunması AST isim değiştirmeye
 yetmez: Clang gerekir. C/Go araçlarının kurulumu isteğe bağlıdır.
+
+## Kurulum
+
+### Tek komutla kurulum
+
+Projeyi elle indirmeniz veya Git kurmanız gerekmez. Aşağıdaki tek satır
+deponun kaynak arşivini indirir, uygulamayı kullanıcı dizinine kopyalar ve
+`confuser` komutunu PATH'e ekler. **Python 3.10+ gerekir; eksikse kurulum için onay sorulur.** Uygulamanın
+harici Python bağımlılığı yoktur; kurucu pip/venv kurmaz veya güncellemez.
+
+Varsayılan komut eksik Python, Clang ve Go için **ayrı ayrı onay ister**.
+`y` / `yes` kurulumu onaylar; `n` veya yalnızca Enter indirmeyi atlar.
+Python eksikse ve kurulumu reddedilirse uygulama kurulumu tamamlanamaz.
+C/Go araçlarını reddetmek Python kullanımını engellemez. Python örneğinin
+doğrulanması zorunludur; C/Go araçları varsa ayrıca denenir, eksik veya bozuksa
+uyarı verilir. Başarılı uygulama kurulumu, eksik bir C/Go motorunun da
+doğrulandığı anlamına gelmez. Kaynak arşivi için internet gerekir.
+
+**Linux (Bash/Zsh; macOS'ta da kullanılabilir):**
+
+`curl` kurulu olmalıdır.
+
+```bash
+(set -o pipefail; curl -fsSL https://raw.githubusercontent.com/emin-eren-kadioglu/confuser-obfuser/main/install.sh | sh -s -- --from-github) && export PATH="$HOME/.local/bin:$PATH"
+```
+
+**Windows 10/11 (PowerShell):**
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/emin-eren-kadioglu/confuser-obfuser/main/install.ps1 -ErrorAction Stop))) -FromGitHub
+```
+
+Kurulum bitince aynı terminalde:
+
+```bash
+confuser
+```
+
+Argümansız çağrı etkileşimli menüyü açar. Doğrudan dosya dönüştürmek için:
+
+```bash
+confuser app.py -o app.obf.py --seed 42 --validate
+```
+
+> Bu komutlar bu deponun `main` dalındaki mevcut kurulum betiğini çalıştırır.
+> Yalnızca güvendiğiniz kaynaklardan kurulum yapın. Kaynak arşivi geçici bir
+> klasöre indirilir ve işlem sonunda silinir; projeyi elle indirmeniz gerekmez.
+
+**Onay akışı:** Yukarıdaki komutlara ek seçenek koymanız gerekmez. Örneğin:
+
+```text
+Install clang? [y/N]: n
+Install go? [y/N]: y
+```
+
+Bu örnekte yalnızca Go kurulumu denenir. Kurulu araçlar tekrar indirilmez.
+Windows'ta Clang derleme kontrolü başarısızsa C++ Build Tools/SDK için ayrıca
+onay sorulur. Araçlar yüzlerce MB; Windows SDK veya Apple geliştirici araçları
+birkaç GB indirme gerektirebilir. Kurucu onaydan önce boyut uyarısını gösterir;
+kesin boyut sisteme ve eksik bileşenlere bağlıdır. Yönetici/sudo izni veya
+yeniden başlatma gerekebilir. Homebrew/WinGet eksikse bunlar için de ayrı onay alınır.
+
+Onaylanan araçlar Linux'ta `apt`, `dnf` veya `pacman`, macOS'ta Homebrew veya
+Apple Command Line Tools, Windows'ta WinGet üzerinden kurulur.
+Dağıtım paketleri minimum sürümleri sağlamalıdır (Ubuntu 24.04 veya sonrası).
+macOS geliştirici araçları grafik kurulum penceresi gerektirebilir; tüm sistem
+paketlerinin kullanıcı müdahalesi olmadan kurulacağı garanti edilmez.
+
+Araç sorularını tamamen atlamak için Linux/macOS komutundaki `--from-github`
+sonrasına `--no-tools`, Windows komutunun sonuna `-SkipTools` ekleyin.
+Etkileşimli terminal yoksa veya `CI=true` ise araç indirilmez. Eski
+`--install-tools` / `-InstallTools` seçenekleri uyumluluk için kabul edilir,
+ancak artık gerekli değildir ve onayı atlamaz. `confuser` uygulamasını açmak
+araç kurulumu başlatmaz; eksik araç soruları kurucuyu tekrar çalıştırınca gelir.
+Kurucu mesajları ve uygulamanın kendi hata mesajları İngilizcedir; menü
+etiketleri Türkçe kalır. İşletim sistemi/harici araç mesajlarının dili değişebilir.
+
+Güncellemek için varsayılan kurulum satırını tekrar çalıştırın. Yeni uygulama
+kopyası kontrol edildikten sonra başlatıcı değiştirilir; eski uygulama
+kopyaları otomatik silinmez. Python mevcutsa yerel kaynak klasöründen
+`sh install.sh --no-tools` veya `powershell -File .\install.ps1 -SkipTools`
+ile kurulum internetsiz çalışır. Go AST analizi ve Go derlemesinde otomatik toolchain/modül
+indirmeleri kapalıdır; proje bağımlılıklarını önceden kendiniz hazırlamalısınız.
+
+### İndirilmiş kaynak klasöründen kurulum
+
+Aynı kurulumu proje klasöründen de başlatabilirsiniz:
+
+macOS/Linux:
+
+```bash
+sh install.sh
+```
+
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Her iki yöntem de `confuser` ve uyumluluk için `confuser-obfuser` komutlarını
+oluşturur. Linux/macOS'ta varsayılan uygulama dizini
+`~/.local/share/confuser-obfuser`, komut dizini `~/.local/bin` olur.
+Windows'ta uygulama `%LOCALAPPDATA%\ConfuserObfuser` altına kurulur.
+
+### Pip ile kurulum
+
+Kaynak klasörden normal kurulum:
+
+```bash
+python3 -m pip install .
+```
+
+Geliştirme kurulumu:
+
+```bash
+python3 -m pip install -e '.[dev]'
+```
+
+Paket kurulumu üç eşdeğer komut oluşturur; eski adlar uyumluluk için korunur:
+
+```bash
+confuser
+confuser-obfuser
+py-obfuscate
+```
+
+Argümansız çağrı etkileşimli menüyü, argümanlı çağrı CLI modunu açar.
+
 
 ## Dönüşümler
 
@@ -258,134 +387,6 @@ Bir Python dosyasını doğrudan dönüştürmek için:
 python3 -m obfuscator app.py -o app.obf.py --seed 42 --validate
 python3 app.obf.py
 ```
-
-## Kurulum
-
-### Tek komutla kurulum
-
-Projeyi elle indirmeniz veya Git kurmanız gerekmez. Aşağıdaki tek satır
-deponun kaynak arşivini indirir, uygulamayı kullanıcı dizinine kopyalar ve
-`confuser` komutunu PATH'e ekler. **Python 3.10+ gerekir; eksikse kurulum için onay sorulur.** Uygulamanın
-harici Python bağımlılığı yoktur; kurucu pip/venv kurmaz veya güncellemez.
-
-Varsayılan komut eksik Python, Clang ve Go için **ayrı ayrı onay ister**.
-`y` / `yes` kurulumu onaylar; `n` veya yalnızca Enter indirmeyi atlar.
-Python eksikse ve kurulumu reddedilirse uygulama kurulumu tamamlanamaz.
-C/Go araçlarını reddetmek Python kullanımını engellemez. Python örneğinin
-doğrulanması zorunludur; C/Go araçları varsa ayrıca denenir, eksik veya bozuksa
-uyarı verilir. Başarılı uygulama kurulumu, eksik bir C/Go motorunun da
-doğrulandığı anlamına gelmez. Kaynak arşivi için internet gerekir.
-
-**Linux (Bash/Zsh; macOS'ta da kullanılabilir):**
-
-`curl` kurulu olmalıdır.
-
-```bash
-(set -o pipefail; curl -fsSL https://raw.githubusercontent.com/emin-eren-kadioglu/confuser-obfuser/main/install.sh | sh -s -- --from-github) && export PATH="$HOME/.local/bin:$PATH"
-```
-
-**Windows 10/11 (PowerShell):**
-
-```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/emin-eren-kadioglu/confuser-obfuser/main/install.ps1 -ErrorAction Stop))) -FromGitHub
-```
-
-Kurulum bitince aynı terminalde:
-
-```bash
-confuser
-```
-
-Argümansız çağrı etkileşimli menüyü açar. Doğrudan dosya dönüştürmek için:
-
-```bash
-confuser app.py -o app.obf.py --seed 42 --validate
-```
-
-> Bu komutlar bu deponun `main` dalındaki mevcut kurulum betiğini çalıştırır.
-> Yalnızca güvendiğiniz kaynaklardan kurulum yapın. Kaynak arşivi geçici bir
-> klasöre indirilir ve işlem sonunda silinir; projeyi elle indirmeniz gerekmez.
-
-**Onay akışı:** Yukarıdaki komutlara ek seçenek koymanız gerekmez. Örneğin:
-
-```text
-Install clang? [y/N]: n
-Install go? [y/N]: y
-```
-
-Bu örnekte yalnızca Go kurulumu denenir. Kurulu araçlar tekrar indirilmez.
-Windows'ta Clang derleme kontrolü başarısızsa C++ Build Tools/SDK için ayrıca
-onay sorulur. Araçlar yüzlerce MB; Windows SDK veya Apple geliştirici araçları
-birkaç GB indirme gerektirebilir. Kurucu onaydan önce boyut uyarısını gösterir;
-kesin boyut sisteme ve eksik bileşenlere bağlıdır. Yönetici/sudo izni veya
-yeniden başlatma gerekebilir. Homebrew/WinGet eksikse bunlar için de ayrı onay alınır.
-
-Onaylanan araçlar Linux'ta `apt`, `dnf` veya `pacman`, macOS'ta Homebrew veya
-Apple Command Line Tools, Windows'ta WinGet üzerinden kurulur.
-Dağıtım paketleri minimum sürümleri sağlamalıdır (Ubuntu 24.04 veya sonrası).
-macOS geliştirici araçları grafik kurulum penceresi gerektirebilir; tüm sistem
-paketlerinin kullanıcı müdahalesi olmadan kurulacağı garanti edilmez.
-
-Araç sorularını tamamen atlamak için Linux/macOS komutundaki `--from-github`
-sonrasına `--no-tools`, Windows komutunun sonuna `-SkipTools` ekleyin.
-Etkileşimli terminal yoksa veya `CI=true` ise araç indirilmez. Eski
-`--install-tools` / `-InstallTools` seçenekleri uyumluluk için kabul edilir,
-ancak artık gerekli değildir ve onayı atlamaz. `confuser` uygulamasını açmak
-araç kurulumu başlatmaz; eksik araç soruları kurucuyu tekrar çalıştırınca gelir.
-Kurucu mesajları ve uygulamanın kendi hata mesajları İngilizcedir; menü
-etiketleri Türkçe kalır. İşletim sistemi/harici araç mesajlarının dili değişebilir.
-
-Güncellemek için varsayılan kurulum satırını tekrar çalıştırın. Yeni uygulama
-kopyası kontrol edildikten sonra başlatıcı değiştirilir; eski uygulama
-kopyaları otomatik silinmez. Python mevcutsa yerel kaynak klasöründen
-`sh install.sh --no-tools` veya `powershell -File .\install.ps1 -SkipTools`
-ile kurulum internetsiz çalışır. Go AST analizi ve Go derlemesinde otomatik toolchain/modül
-indirmeleri kapalıdır; proje bağımlılıklarını önceden kendiniz hazırlamalısınız.
-
-### İndirilmiş kaynak klasöründen kurulum
-
-Aynı kurulumu proje klasöründen de başlatabilirsiniz:
-
-macOS/Linux:
-
-```bash
-sh install.sh
-```
-
-Windows PowerShell:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1
-```
-
-Her iki yöntem de `confuser` ve uyumluluk için `confuser-obfuser` komutlarını
-oluşturur. Linux/macOS'ta varsayılan uygulama dizini
-`~/.local/share/confuser-obfuser`, komut dizini `~/.local/bin` olur.
-Windows'ta uygulama `%LOCALAPPDATA%\ConfuserObfuser` altına kurulur.
-
-### Pip ile kurulum
-
-Kaynak klasörden normal kurulum:
-
-```bash
-python3 -m pip install .
-```
-
-Geliştirme kurulumu:
-
-```bash
-python3 -m pip install -e '.[dev]'
-```
-
-Paket kurulumu üç eşdeğer komut oluşturur; eski adlar uyumluluk için korunur:
-
-```bash
-confuser
-confuser-obfuser
-py-obfuscate
-```
-
-Argümansız çağrı etkileşimli menüyü, argümanlı çağrı CLI modunu açar.
 
 ## Etkileşimli terminal arayüzü
 
