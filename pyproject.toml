@@ -10,11 +10,11 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
-    { name = "Emin Eren Kadioglu" },
+    { name = "Emin Eren Kadioglu", email = "whoisrscey@gmail.com" },
 ]
 keywords = ["ast", "c", "cli", "go", "obfuscation", "python", "terminal"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",

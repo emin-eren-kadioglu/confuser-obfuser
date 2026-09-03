@@ -117,6 +117,41 @@ class NativeObfuscatorTests(unittest.TestCase):
         self.assertNotIn("int add(", result)
         self.assertTrue(validate_behavior(source, result, language=SourceLanguage.C).equivalent)
 
+    @unittest.skipUnless(shutil.which("clang"), "Clang is not installed")
+    def test_c_renames_macro_arguments_using_spelling_locations(self) -> None:
+        source = '''
+#define USE(value) ((value) + 1)
+int calculate(int input) {
+    int captured = input;
+    int ordinary = 2;
+    return USE(captured) + USE(input) + ordinary;
+}
+int main(void) { return calculate(3) == 10 ? 0 : 1; }
+'''
+        config = self.config(encode_strings=False, transform_numbers=False, insert_dead_code=False)
+        result = Obfuscator(config).obfuscate(source, "demo.c")
+        self.assertNotIn("int input", result)
+        self.assertNotIn("int captured", result)
+        self.assertNotIn("USE(captured)", result)
+        self.assertNotIn("USE(input)", result)
+        self.assertNotIn("ordinary", result)
+        self.assertTrue(validate_behavior(source, result, language=SourceLanguage.C).equivalent)
+
+    @unittest.skipUnless(shutil.which("clang"), "Clang is not installed")
+    def test_c_preserves_ambiguous_names_captured_by_a_macro_body(self) -> None:
+        source = '''
+int value = 3;
+#define CURRENT() (value + 1)
+int first(int value) { return CURRENT(); }
+int second(void) { return CURRENT(); }
+int main(void) { return first(1) + second() == 6 ? 0 : 1; }
+'''
+        config = self.config(encode_strings=False, transform_numbers=False, insert_dead_code=False)
+        result = Obfuscator(config).obfuscate(source, "demo.c")
+        self.assertEqual(result.count("int value"), 2)
+        self.assertIn("#define CURRENT() (value + 1)", result)
+        self.assertTrue(validate_behavior(source, result, language=SourceLanguage.C).equivalent)
+
     @unittest.skipUnless(shutil.which("cc"), "C compiler is not installed")
     def test_c_function_names_do_not_collide_with_struct_fields(self) -> None:
         source = '''

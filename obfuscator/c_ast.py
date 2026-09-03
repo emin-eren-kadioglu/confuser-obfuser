@@ -35,6 +35,23 @@ def _direct_offset(location: dict[str, Any] | None) -> tuple[int, int] | None:
     return int(location["offset"]), int(location.get("tokLen", 0))
 
 
+def _reference_edit_location(location: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return a main-file location for a direct or macro-expanded reference."""
+    if _direct_offset(location) is not None:
+        return location
+    if not location:
+        return None
+    spelling = location.get("spellingLoc")
+    if not isinstance(spelling, dict) or "offset" not in spelling or "includedFrom" in spelling:
+        return None
+    # The temporary translation unit is always named source.c. Clang commonly
+    # omits ``file`` when it is unchanged from the preceding main-file node.
+    file = spelling.get("file")
+    if isinstance(file, str) and Path(file).name != "source.c":
+        return None
+    return spelling
+
+
 def _fresh_name(rng: random.Random, used: set[str]) -> str:
     alphabet = string.ascii_letters + string.digits
     while True:
@@ -136,6 +153,75 @@ def rename_c_identifiers(source: str, filename: str, rng: random.Random, *, pres
                 rename_by_id[identifier] = function_name_map[str(node["name"])]
                 declaration_nodes.append(node)
 
+    # Clang reports references produced by macro expansion through spellingLoc /
+    # expansionLoc. The spelling location lets us safely rewrite an explicit
+    # macro argument such as CHECK(value), keeping full identifier obfuscation.
+    # A macro body can also capture a local name. If the same spelling token
+    # binds to different declarations at different expansion sites, competing
+    # replacements would be unsafe; only those ambiguous symbols are preserved.
+    blocked_ids: set[str] = set()
+    blocked_function_names: set[str] = set()
+    macro_location_bindings: dict[tuple[int, int], list[tuple[str | None, str | None, str]]] = {}
+    for node in nodes:
+        if node.get("kind") != "DeclRefExpr":
+            continue
+        location = node.get("range", {}).get("begin")
+        if _direct_offset(location) is not None:
+            continue
+        referenced = node.get("referencedDecl", {})
+        identifier = referenced.get("id")
+        name = referenced.get("name")
+        function_name = (
+            name
+            if referenced.get("kind") == "FunctionDecl"
+            and isinstance(name, str)
+            and name in function_name_map
+            else None
+        )
+        replacement = (
+            rename_by_id.get(identifier) if isinstance(identifier, str) else None
+        ) or (function_name_map.get(function_name) if function_name is not None else None)
+        edit_location = _reference_edit_location(location)
+        direct = _direct_offset(edit_location)
+        if direct is None:
+            if replacement is not None and isinstance(identifier, str):
+                blocked_ids.add(identifier)
+            if replacement is not None and function_name is not None:
+                blocked_function_names.add(function_name)
+            continue
+        if not isinstance(name, str):
+            continue
+        # Unrenamed globals and fields matter here too. If a macro-body token
+        # resolves to a renamed local in one expansion but an untouched global
+        # in another, the original spelling is another competing replacement.
+        macro_location_bindings.setdefault(direct, []).append(
+            (
+                identifier if replacement is not None and isinstance(identifier, str) else None,
+                function_name if replacement is not None else None,
+                replacement or name,
+            )
+        )
+
+    for bindings in macro_location_bindings.values():
+        if len({replacement for _, _, replacement in bindings}) <= 1:
+            continue
+        for identifier, function_name, _ in bindings:
+            if identifier is not None:
+                blocked_ids.add(identifier)
+            if function_name is not None:
+                blocked_function_names.add(function_name)
+
+    for identifier in blocked_ids:
+        rename_by_id.pop(identifier, None)
+    for name in blocked_function_names:
+        function_name_map.pop(name, None)
+    if blocked_function_names:
+        for node in nodes:
+            if node.get("kind") == "FunctionDecl" and node.get("name") in blocked_function_names:
+                identifier = node.get("id")
+                if isinstance(identifier, str):
+                    rename_by_id.pop(identifier, None)
+
     edits: dict[tuple[int, int], bytes] = {}
     source_bytes = source.encode("utf-8")
 
@@ -153,8 +239,9 @@ def rename_c_identifiers(source: str, filename: str, rng: random.Random, *, pres
     for node in declaration_nodes:
         identifier = node.get("id")
         old_name = node.get("name")
-        if isinstance(identifier, str) and isinstance(old_name, str):
-            add_edit(node.get("loc"), old_name, rename_by_id[identifier])
+        new_name = rename_by_id.get(identifier) if isinstance(identifier, str) else None
+        if isinstance(old_name, str) and isinstance(new_name, str):
+            add_edit(node.get("loc"), old_name, new_name)
 
     for node in nodes:
         if node.get("kind") != "DeclRefExpr":
@@ -168,7 +255,7 @@ def rename_c_identifiers(source: str, filename: str, rng: random.Random, *, pres
         if new_name is None and referenced.get("kind") == "FunctionDecl":
             new_name = function_name_map.get(old_name)
         if new_name is not None:
-            add_edit(node.get("range", {}).get("begin"), old_name, new_name)
+            add_edit(_reference_edit_location(node.get("range", {}).get("begin")), old_name, new_name)
 
     result = source_bytes
     for (offset, length), replacement in sorted(edits.items(), reverse=True):
