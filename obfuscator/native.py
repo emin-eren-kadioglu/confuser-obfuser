@@ -119,10 +119,15 @@ def tokenize(source: str, language: SourceLanguage) -> list[Token]:
             tokens.append(Token("identifier", source[index:end]))
             index = end
             continue
-        if char.isdigit():
+        if char.isdigit() or (char == "." and index + 1 < length and source[index + 1].isdigit()):
             end = index + 1
-            while end < length and (source[end].isalnum() or source[end] in "._"):
-                end += 1
+            while end < length:
+                if source[end] in "+-" and source[end - 1] in "eEpP":
+                    end += 1
+                elif source[end].isalnum() or source[end] in "._'":
+                    end += 1
+                else:
+                    break
             tokens.append(Token("number", source[index:end]))
             index = end
             continue
@@ -284,6 +289,10 @@ def _transform_numbers(tokens: list[Token], rng: random.Random) -> None:
         ):
             continue
         value = int(token.text)
+        # Larger C literals may have a wider type than their generated operands.
+        # Preserve them instead of introducing signed-int overflow.
+        if value > 2_147_483_647:
+            continue
         factor = rng.randint(2, 9)
         quotient, remainder = divmod(value, factor)
         token.text = f"(({quotient} * {factor}) + {remainder})"
@@ -299,7 +308,7 @@ def _insert_dead_code(tokens: list[Token], language: SourceLanguage, rng: random
         if language is SourceLanguage.C:
             code = f"\n    if (0) {{ volatile int {variable} = {value}; (void){variable}; }}"
         else:
-            code = f"\n\tif false {{ {variable} := {value}; _ = {variable} }}\n\t"
+            code = f"\n\tif 0 != 0 {{ {variable} := {value}; _ = {variable} }}\n\t"
         tokens.insert(region.body_open + 1, Token("space", code))
 
 

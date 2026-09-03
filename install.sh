@@ -3,13 +3,27 @@
 # Confuser Obfuser installer for macOS and Linux.
 set -eu
 
-if [ "${1:-}" = "--from-github" ]; then
+from_github=0
+install_tools=0
+for option in "$@"; do
+    case "$option" in
+        --from-github) from_github=1 ;;
+        --install-tools) install_tools=1 ;;
+        *) printf 'Bilinmeyen seçenek: %s\n' "$option" >&2; exit 1 ;;
+    esac
+done
+
+if [ "$from_github" -eq 1 ]; then
     source_tmp=$(mktemp -d "${TMPDIR:-/tmp}/confuser-source.XXXXXX")
     trap 'rm -rf -- "$source_tmp"' 0
     curl -fsSL https://github.com/emin-eren-kadioglu/confuser-obfuser/archive/refs/heads/main.tar.gz -o "$source_tmp/source.tar.gz"
     mkdir "$source_tmp/source"
     tar -xzf "$source_tmp/source.tar.gz" -C "$source_tmp/source" --strip-components=1
-    sh "$source_tmp/source/install.sh"
+    if [ "$install_tools" -eq 1 ]; then
+        sh "$source_tmp/source/install.sh" --install-tools
+    else
+        sh "$source_tmp/source/install.sh"
+    fi
     exit 0
 fi
 
@@ -27,7 +41,7 @@ have() {
 }
 
 python_ready() {
-    have python3 && python3 -c 'import sys, venv, ensurepip; assert sys.version_info >= (3, 10)' >/dev/null 2>&1
+    have python3 && python3 -c 'import sys; assert sys.version_info >= (3, 10)' >/dev/null 2>&1
 }
 
 as_root() {
@@ -73,18 +87,30 @@ install_macos_tools() {
 
 install_linux_tools() {
     missing=""
-    python_ready || missing="$missing python3/venv/pip"
+    python_ready || missing="$missing python3"
     have clang || missing="$missing clang"
     have go || missing="$missing go"
     [ -z "$missing" ] && return
 
     if have apt-get; then
+        set --
+        python_ready || set -- "$@" python3
+        have clang || set -- "$@" clang
+        have go || set -- "$@" golang-go
         as_root apt-get update
-        as_root apt-get install -y python3 python3-venv python3-pip clang golang-go
+        as_root apt-get install -y "$@"
     elif have dnf; then
-        as_root dnf install -y python3 python3-pip clang golang
+        set --
+        python_ready || set -- "$@" python3
+        have clang || set -- "$@" clang
+        have go || set -- "$@" golang
+        as_root dnf install -y "$@"
     elif have pacman; then
-        as_root pacman -S --needed --noconfirm python python-pip clang go
+        set --
+        python_ready || set -- "$@" python
+        have clang || set -- "$@" clang
+        have go || set -- "$@" go
+        as_root pacman -S --needed --noconfirm "$@"
     else
         say "Hata: Eksik araçlar:$missing"
         say "Desteklenen bir paket yöneticisi bulunamadı (apt, dnf veya pacman)."
@@ -93,38 +119,83 @@ install_linux_tools() {
 }
 
 case "$OS_NAME" in
-    Darwin) install_macos_tools ;;
-    Linux) install_linux_tools ;;
+    Darwin|Linux) ;;
     *)
         say "Hata: install.sh yalnızca macOS ve Linux'u destekliyor."
         exit 1
         ;;
 esac
 
-for required_tool in python3 clang go; do
-    if ! have "$required_tool"; then
-        say "Hata: $required_tool kurulumdan sonra bulunamadı."
+if [ "$install_tools" -eq 1 ]; then
+    say "İsteğe bağlı Python/Clang/Go kurulumu: bağımlılıklar yüzlerce MB veya birkaç GB indirebilir."
+    say "Paket yöneticisi/Apple geliştirici araçları da kurulabilir. Yönetici onayı gerekebilir."
+    say "Devam etmek için EVET yazın (diğer yanıtlar indirmeyi iptal eder):"
+    answer=""
+    if ! (test -r /dev/tty) 2>/dev/null || ! { IFS= read -r answer </dev/tty; } 2>/dev/null; then
+        say "Onay alınamadı; araç indirilmedi. Etkileşimli terminalden tekrar deneyin."
         exit 1
     fi
-done
+    [ "$answer" = "EVET" ] || { say "İptal edildi; araç indirilmedi."; exit 1; }
+    case "$OS_NAME" in
+        Darwin) install_macos_tools ;;
+        Linux) install_linux_tools ;;
+    esac
+fi
 
 if ! python_ready; then
-    say "Hata: Python 3.10+ ve venv/pip desteği gerekiyor; dağıtımınızın paket sürümlerini kontrol edin."
+    say "Hata: Python 3.10+ gerekiyor. Araç indirilmedi. Python kurun veya --install-tools ile onaylı kurulumu seçin."
     exit 1
 fi
 
-say "İzole uygulama ortamı hazırlanıyor..."
+say "Uygulama hazırlanıyor (pip veya ek Python paketi indirilmez)..."
 mkdir -p "$INSTALL_ROOT" "$USER_BIN"
-python3 -m venv "$INSTALL_ROOT/venv"
-"$INSTALL_ROOT/venv/bin/python" -m pip install --upgrade pip
-"$INSTALL_ROOT/venv/bin/python" -m pip install --upgrade "$PROJECT_DIR"
+PYTHON_EXE=$(python3 -c 'import sys; print(sys.executable)')
+RELEASE_DIR=$(mktemp -d "$INSTALL_ROOT/app.XXXXXX")
+"$PYTHON_EXE" - "$PROJECT_DIR" "$RELEASE_DIR" <<'PY'
+import shutil
+import sys
+from pathlib import Path
+source, target = map(Path, sys.argv[1:])
+shutil.copytree(source / "obfuscator", target / "obfuscator",
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+shutil.copy2(source / "confuser_obfuser.py", target)
+shutil.copy2(source / "LICENSE", target)
+PY
 
-for command_name in confuser confuser-obfuser; do
-    wrapper_tmp=$(mktemp "$USER_BIN/.confuser.XXXXXX")
-    printf '%s\n' '#!/bin/sh' "exec \"$INSTALL_ROOT/venv/bin/confuser\" \"\$@\"" > "$wrapper_tmp"
-    chmod 755 "$wrapper_tmp"
-    mv -f "$wrapper_tmp" "$USER_BIN/$command_name"
+CHECK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/confuser-check.XXXXXX")
+trap 'rm -rf -- "$CHECK_DIR"' 0
+say "Python motoru kontrol ediliyor..."
+"$PYTHON_EXE" "$RELEASE_DIR/confuser_obfuser.py" "$PROJECT_DIR/examples/demo.py" -o "$CHECK_DIR/demo.obf.py" --seed 42 --validate
+# Optional tools are probed, never downloaded. Their failure must not prevent Python use.
+export GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off
+for language in c go; do
+    tool=clang
+    [ "$language" != go ] || tool=go
+    if have "$tool"; then
+        if "$PYTHON_EXE" "$RELEASE_DIR/confuser_obfuser.py" "$PROJECT_DIR/examples/demo.$language" -o "$CHECK_DIR/demo.obf.$language" --seed 42 --validate --timeout 60; then
+            say "$language motoru doğrulandı."
+        else
+            say "Uyarı: $language motor kontrolü geçmedi; mevcut araçları/SDK'yı kontrol edin. Otomatik indirme yapılmadı."
+        fi
+    else
+        say "Uyarı: $tool bulunamadı; $language kontrolü atlandı. Python kullanılabilir; araç kurulmadı."
+    fi
 done
+
+"$PYTHON_EXE" - "$PYTHON_EXE" "$RELEASE_DIR" "$USER_BIN" <<'PY'
+import os
+import shlex
+import sys
+import tempfile
+from pathlib import Path
+python, release, user_bin = sys.argv[1:]
+command = shlex.join([python, str(Path(release) / "confuser_obfuser.py")])
+for name in ("confuser", "confuser-obfuser"):
+    with tempfile.NamedTemporaryFile(mode="w", dir=user_bin, delete=False, encoding="utf-8") as stream:
+        stream.write('#!/bin/sh\nexec ' + command + ' "$@"\n')
+    os.chmod(stream.name, 0o755)
+    os.replace(stream.name, Path(user_bin) / name)
+PY
 WRAPPER="$USER_BIN/confuser"
 
 case ":$PATH:" in
@@ -151,32 +222,28 @@ if [ "$path_ready" -eq 0 ]; then
             ;;
         fish)
             profile_file="$HOME/.config/fish/config.fish"
-            mkdir -p "$(dirname "$profile_file")"
-            path_line="fish_add_path \"$USER_BIN\""
             ;;
         *)
             profile_file="$HOME/.profile"
             ;;
     esac
-    if [ "$shell_name" != "fish" ]; then
-        path_line="export PATH=\"$USER_BIN:\$PATH\""
-    fi
-    if [ ! -f "$profile_file" ] || ! grep -F "$path_line" "$profile_file" >/dev/null 2>&1; then
-        printf '\n%s\n' "$path_line" >> "$profile_file"
-    fi
+    "$PYTHON_EXE" - "$profile_file" "$USER_BIN" "$shell_name" <<'PY'
+import shlex
+import sys
+from pathlib import Path
+profile, directory, shell = sys.argv[1:]
+quoted = shlex.quote(directory)
+line = "fish_add_path " + quoted if shell == "fish" else "export PATH=" + quoted + ':"$PATH"'
+path = Path(profile)
+path.parent.mkdir(parents=True, exist_ok=True)
+if not path.exists() or line not in path.read_text(encoding="utf-8").splitlines():
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write("\n" + line + "\n")
+PY
 fi
 
-CHECK_DIR=$(mktemp -d)
-trap 'rm -rf -- "$CHECK_DIR"' 0
-say "Python motoru kontrol ediliyor..."
-"$WRAPPER" "$PROJECT_DIR/examples/demo.py" -o "$CHECK_DIR/demo.obf.py" --seed 42 --validate
-say "C/Clang AST motoru kontrol ediliyor..."
-"$WRAPPER" "$PROJECT_DIR/examples/demo.c" -o "$CHECK_DIR/demo.obf.c" --seed 42 --validate
-say "Go AST motoru kontrol ediliyor..."
-"$WRAPPER" "$PROJECT_DIR/examples/demo.go" -o "$CHECK_DIR/demo.obf.go" --seed 42 --validate
-
 say ""
-say "✓ Confuser Obfuser kuruldu ve üç motor doğrulandı."
+say "✓ Confuser Obfuser kuruldu; Python doğrulandı. C/Go durumu yukarıda ayrı gösterildi."
 if [ "$path_ready" -eq 1 ]; then
     say "Başlatmak için: confuser"
 else

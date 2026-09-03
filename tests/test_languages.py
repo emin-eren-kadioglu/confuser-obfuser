@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 import io
+import os
+import random
 import shutil
+import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
+from unittest.mock import patch
 
 from obfuscator import ObfuscationConfig, Obfuscator, SourceLanguage, detect_language
 from obfuscator.cli import main
 from obfuscator.languages import default_output_path
 from obfuscator.terminal_ui import TerminalUI
 from obfuscator.validator import validate_behavior
+from obfuscator.native import tokenize
+from obfuscator.go_ast import rename_go_identifiers
 
 
 C_SOURCE = r'''#include <stdio.h>
@@ -133,7 +140,7 @@ int main(void) {
         self.assertNotIn("total :=", result)
         self.assertIn('import "fmt"', result)
         self.assertIn("fmt.Println", result)
-        self.assertIn("if false", result)
+        self.assertIn("if 0 != 0", result)
         self.assertIn("\\x", result)
 
     @unittest.skipUnless(shutil.which("go"), "Go toolchain is not installed")
@@ -227,6 +234,84 @@ func (item Item) LabelText() string { return item.Label }
             self.assertEqual(ui.state.output_path, source.with_name("demo.obf.go").resolve())
             ui._main_menu("1")
             self.assertIn("[Go]", ui.stdout.getvalue())
+
+
+class NativeRegressionTests(unittest.TestCase):
+    def test_numeric_literals_are_not_split(self) -> None:
+        for language in (SourceLanguage.C, SourceLanguage.GO):
+            for literal in ("1e-3", "1E+3", ".5", "0x1p-2", "0X1P+2", "1.e-2f", "1_000", "1'000"):
+                with self.subTest(language=language, literal=literal):
+                    tokens = tokenize(literal, language)
+                    self.assertEqual([(t.kind, t.text) for t in tokens], [("number", literal)])
+
+    def test_special_and_wide_numbers_are_preserved_across_rounds(self) -> None:
+        source = "double value = 1e-3 + .5 + 0x1p+2; long wide = 2147483648;"
+        config = ObfuscationConfig(seed=42, rename_identifiers=False, encode_strings=False,
+                                   insert_dead_code=False, iterations=3)
+        self.assertEqual(Obfuscator(config).obfuscate(source, "probe.c"), source)
+
+    @unittest.skipUnless(shutil.which("clang"), "Clang is not installed")
+    def test_c_scientific_and_wide_literals_compile_and_match(self) -> None:
+        source = '''#include <stdio.h>
+int main(void) {
+    double value = 1e-3 + 1E+3 + .5 + 0x1p-2 + 0X1P+2;
+    long long wide = 2147483648;
+    printf("%.3f %lld\\n", value, wide);
+    return 0;
+}
+'''
+        for iterations in (1, 3):
+            with self.subTest(iterations=iterations):
+                result = Obfuscator(ObfuscationConfig(seed=42, iterations=iterations)).obfuscate(source, "probe.c")
+                validation = validate_behavior(source, result, language=SourceLanguage.C, timeout=30)
+                self.assertTrue(validation.original_compiled, validation.original.stderr)
+                self.assertTrue(validation.obfuscated_compiled, validation.obfuscated.stderr)
+                self.assertTrue(validation.equivalent, validation)
+
+    @unittest.skipUnless(shutil.which("go"), "Go is not installed")
+    def test_go_shadowed_false_compiles_and_matches(self) -> None:
+        source = 'package main\nimport "fmt"\nvar false = 3\nfunc main() { fmt.Println(false) }\n'
+        for rename, iterations in ((True, 1), (True, 3), (False, 1)):
+            with self.subTest(rename=rename, iterations=iterations):
+                config = ObfuscationConfig(seed=42, rename_identifiers=rename, iterations=iterations)
+                result = Obfuscator(config).obfuscate(source, "probe.go")
+                validation = validate_behavior(source, result, language=SourceLanguage.GO, timeout=60)
+                self.assertTrue(validation.original_compiled, validation.original.stderr)
+                self.assertTrue(validation.obfuscated_compiled, validation.obfuscated.stderr)
+                self.assertTrue(validation.equivalent, validation)
+
+    def test_go_commands_disable_automatic_downloads(self) -> None:
+        source = "package main\nfunc main() {}\n"
+        completed = subprocess.CompletedProcess([], 0, b"", b"")
+        with patch.dict(os.environ, {"GOTOOLCHAIN": "auto", "GOPROXY": "https://example.invalid", "GO111MODULE": "on"}):
+            with patch("shutil.which", return_value="go"), patch("subprocess.run", return_value=completed) as run:
+                rename_go_identifiers(source, "probe.go", random.Random(42))
+                helper_environment = run.call_args.kwargs["env"]
+                run.reset_mock()
+                validate_behavior(source, source, language=SourceLanguage.GO)
+                compile_environments = [call.kwargs["env"] for call in run.call_args_list if "env" in call.kwargs]
+        for environment in [helper_environment, *compile_environments]:
+            self.assertEqual(environment["GOTOOLCHAIN"], "local")
+            self.assertEqual(environment["GOPROXY"], "off")
+            self.assertEqual(environment["GOSUMDB"], "off")
+            self.assertEqual(environment["GO111MODULE"], "off")
+
+    def test_missing_validation_compiler_is_a_clean_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for extension, source in (("c", "int main(void) { return 0; }"), ("go", "package main\nfunc main() {}\n")):
+                with self.subTest(extension=extension):
+                    input_path = root / ("input." + extension)
+                    output_path = root / ("output." + extension)
+                    input_path.write_text(source, encoding="utf-8")
+                    output_path.write_text("keep existing output", encoding="utf-8")
+                    errors = io.StringIO()
+                    with patch("shutil.which", return_value=None), redirect_stderr(errors):
+                        code = main([str(input_path), "-o", str(output_path), "--no-rename", "--validate"])
+                    self.assertEqual(code, 2)
+                    self.assertIn("validation failed:", errors.getvalue())
+                    self.assertNotIn("Traceback", errors.getvalue())
+                    self.assertEqual(output_path.read_text(encoding="utf-8"), "keep existing output")
 
 
 if __name__ == "__main__":

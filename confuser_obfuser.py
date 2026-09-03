@@ -1,7 +1,7 @@
-"""Launch the interactive Confuser Obfuser terminal tool."""
+"""Launch the menu without arguments, or forward arguments to the CLI."""
 
-from obfuscator.terminal_ui import run_interactive
+from obfuscator.cli import main
 
 
 if __name__ == "__main__":
-    raise SystemExit(run_interactive())
+    raise SystemExit(main())

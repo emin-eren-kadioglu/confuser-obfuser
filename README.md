@@ -81,13 +81,14 @@ olarak gösterir. Kullanıcının ayrıca dil seçmesine gerek yoktur.
 ### Sistem gereksinimleri
 
 - Python 3.10 veya üzeri
-- C isim değiştirme ve C doğrulaması için Clang 14 veya üzeri
-- Go isim değiştirme ve Go doğrulaması için Go 1.22 veya üzeri
+- C desteği için Clang 14 veya üzeri; C doğrulaması için çalışan derleyici, SDK ve bağlayıcı
+- Go desteği için Go 1.22 veya üzeri
 - UTF-8 kaynak dosyaları
 
-Tek komutluk kurulum Python, sanal ortam desteği, Clang ve Go'yu kontrol eder;
-eksikleri sistemin paket yöneticisiyle kurar. Windows'ta gerekli C SDK ve
-bağlayıcı bileşenlerini de kontrol eder.
+Python kullanımı için C/Go araçları gerekli değildir. Tek komutluk kurulum
+mevcut Python'u kullanır; varsayılan olarak hiçbir araç, SDK veya ek Python
+paketi indirmez. C için yalnızca GCC bulunması AST isim değiştirmeye yetmez:
+Clang gerekir. Eksik araçların kurulumu aşağıdaki gibi isteğe bağlıdır.
 
 ## Dönüşümler
 
@@ -196,7 +197,9 @@ int timeout = ((4 * 7) + 2);
 
 Python motoru boolean değerleri, annotation içindeki sayıları ve `match`
 desenlerini korur. C ve Go motoru başında sıfır bulunan ya da hex, octal,
-binary ve suffix gibi özel biçim taşıyan sayıları değiştirmez.
+binary, suffix, ondalıklı veya bilimsel gösterim gibi özel biçim taşıyan
+sayıları değiştirmez. C'de ara işlemlerin taşmasını önlemek için 2147483647'den
+büyük tam sayılar da C/Go sayı geçişinde korunur.
 
 Bu geçişi kapatmak için `--no-numbers` kullanılır.
 
@@ -224,7 +227,7 @@ if (0) {
 Go:
 
 ```go
-if false {
+if 0 != 0 {
     _cf_dead_JmTPSIAoC := 5557
     _ = _cf_dead_JmTPSIAoC
 }
@@ -260,15 +263,16 @@ python3 app.obf.py
 
 ### Tek komutla kurulum
 
-Projeyi indirmeniz veya Git kurmanız gerekmez. Aşağıdaki tek satırı
-terminalinize yapıştırın. Kurulum eksik Python, Clang ve Go araçlarını kurar,
-uygulamayı izole bir ortama yerleştirir ve `confuser` komutunu PATH'e ekler.
-Son olarak üç dilde örnek kodları dönüştürüp sonuçlarını doğrular.
+Projeyi elle indirmeniz veya Git kurmanız gerekmez. Aşağıdaki tek satır
+deponun kaynak arşivini indirir, uygulamayı kullanıcı dizinine kopyalar ve
+`confuser` komutunu PATH'e ekler. **Mevcut Python 3.10+ gerekir.** Uygulamanın
+harici Python bağımlılığı yoktur; kurucu pip/venv kurmaz veya güncellemez.
 
-İnternet bağlantısı gerekir. Sistem paketi eksikse Linux'ta sudo şifresi,
-Windows'ta yönetici onayı istenebilir. Windows C++ Build Tools kurulumu büyük
-bir indirme gerektirebilir; yeniden başlatma istenirse ardından aynı komutu
-tekrar çalıştırın. Kurulum ancak üç motorun kontrolü de geçerse başarılı sayılır.
+Varsayılan komut Python, Clang, Go, Homebrew, WinGet veya Windows SDK **indirmez**.
+Python eksikse açıklayıcı hata verir. Python örneğinin doğrulanması zorunludur;
+C/Go araçları varsa ayrıca denenir, eksik veya bozuksa uyarı verilir ve
+Python kullanımı engellenmez. Başarılı uygulama kurulumu, eksik bir C/Go
+motorunun da doğrulandığı anlamına gelmez. Kaynak arşivi için internet gerekir.
 
 **Linux (Bash/Zsh; macOS'ta da kullanılabilir):**
 
@@ -300,13 +304,25 @@ confuser app.py -o app.obf.py --seed 42 --validate
 > Yalnızca güvendiğiniz kaynaklardan kurulum yapın. Kaynak arşivi geçici bir
 > klasöre indirilir ve işlem sonunda silinir; projeyi elle indirmeniz gerekmez.
 
-Linux'ta `apt`, `dnf` veya `pacman`, macOS'ta Homebrew, Windows'ta WinGet
-kullanılır. WinGet eksikse Microsoft'un `Microsoft.WinGet.Client` modülüyle
-kurulması denenir. Dağıtımınızın depolarındaki araçlar yukarıdaki minimum
-sürümleri sağlamalıdır; Ubuntu için 24.04 veya daha yenisini kullanın.
+**İsteğe bağlı araç kurulumu:** Yukarıdaki Linux/macOS komutunda
+`--from-github` sonrasına `--install-tools`; Windows komutunun sonuna
+`-InstallTools` ekleyebilirsiniz. Bu seçenek ayrıca terminalde `EVET` onayı
+ister; onay verilmezse araç kurulumu başlamaz. Yüzlerce MB, Windows C++ Build
+Tools/SDK veya Apple geliştirici araçlarıyla birkaç GB indirme gerekebilir.
+Kesin boyut sisteme ve eksik bileşenlere bağlıdır. Onayı yalnızca bu indirmeyi
+istiyorsanız verin; yönetici/sudo izni veya yeniden başlatma gerekebilir.
 
-Güncellemek için aynı kurulum satırını tekrar çalıştırın. Mevcut araçlar yeniden
-indirilmeden kontrol edilir; uygulama güncellenir ve üç dil testi tekrar yapılır.
+Yalnızca bu isteğe bağlı mod Linux'ta `apt`, `dnf` veya `pacman`, macOS'ta
+Homebrew, Windows'ta WinGet kullanır; gerekirse Homebrew/WinGet de kurulur.
+Dağıtım paketleri minimum sürümleri sağlamalıdır (Ubuntu 24.04 veya sonrası).
+macOS geliştirici araçları grafik kurulum penceresi gerektirebilir; tüm sistem
+paketlerinin kullanıcı müdahalesi olmadan kurulacağı garanti edilmez.
+
+Güncellemek için varsayılan kurulum satırını tekrar çalıştırın. Yeni uygulama
+kopyası kontrol edildikten sonra başlatıcı değiştirilir; eski uygulama
+kopyaları otomatik silinmez. Yerel kaynak klasöründen varsayılan kurulum
+internetsiz çalışır. Go AST analizi ve Go derlemesinde otomatik toolchain/modül
+indirmeleri kapalıdır; proje bağımlılıklarını önceden kendiniz hazırlamalısınız.
 
 ### İndirilmiş kaynak klasöründen kurulum
 

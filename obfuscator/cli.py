@@ -97,6 +97,9 @@ def main(argv: list[str] | None = None) -> int:
         except subprocess.TimeoutExpired:
             print(f"validation failed: timed out after {args.timeout:g} seconds", file=sys.stderr)
             return 2
+        except (ValueError, OSError) as error:
+            print(f"validation failed: {error}", file=sys.stderr)
+            return 2
         if not validation.equivalent:
             print("validation failed: compilation, exit status or observable outputs differ", file=sys.stderr)
             return 2

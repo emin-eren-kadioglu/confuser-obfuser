@@ -70,7 +70,7 @@ def _compile_and_execute(
         command = [compiler, "build", "-o", str(binary), str(path)]
     environment = os.environ.copy()
     if language is SourceLanguage.GO:
-        environment.setdefault("GO111MODULE", "off")
+        environment.update(GO111MODULE="off", GOTOOLCHAIN="local", GOPROXY="off", GOSUMDB="off")
     compiled = subprocess.run(
         command,
         capture_output=True,

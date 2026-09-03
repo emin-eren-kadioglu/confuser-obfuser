@@ -47,7 +47,7 @@ def _fresh_name(rng: random.Random, used: set[str]) -> str:
 def _clang_ast(source: str, filename: str) -> dict[str, Any]:
     clang = shutil.which(os.environ.get("CLANG", "clang"))
     if clang is None:
-        raise ValueError("C identifier renaming requires clang in PATH; run sh install.sh")
+        raise ValueError("C identifier renaming requires installed Clang in PATH; no download was started")
     source_path = Path(filename)
     include_directory = source_path.resolve().parent if source_path.name not in {"", "<unknown>"} else Path.cwd()
     extra_arguments = shlex.split(os.environ.get("CONFUSER_CLANG_ARGS", ""))

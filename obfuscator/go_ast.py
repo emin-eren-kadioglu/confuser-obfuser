@@ -13,7 +13,7 @@ from pathlib import Path
 def rename_go_identifiers(source: str, filename: str, rng: random.Random) -> str:
     go = shutil.which("go")
     if go is None:
-        raise ValueError("Go identifier renaming requires the go toolchain; run sh install.sh")
+        raise ValueError("Go identifier renaming requires an installed Go toolchain in PATH; no download was started")
     helper = Path(__file__).with_name("go_ast_helper") / "main.go"
     if not helper.is_file():
         raise ValueError("bundled Go AST helper is missing; reinstall Confuser Obfuser")
@@ -26,7 +26,7 @@ def rename_go_identifiers(source: str, filename: str, rng: random.Random) -> str
         }
     ).encode("utf-8")
     environment = os.environ.copy()
-    environment.setdefault("GO111MODULE", "off")
+    environment.update(GO111MODULE="off", GOTOOLCHAIN="local", GOPROXY="off", GOSUMDB="off")
     try:
         completed = subprocess.run(
             [go, "run", str(helper)],
