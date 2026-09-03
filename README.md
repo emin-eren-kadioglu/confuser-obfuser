@@ -86,9 +86,9 @@ olarak gösterir. Kullanıcının ayrıca dil seçmesine gerek yoktur.
 - UTF-8 kaynak dosyaları
 
 Python kullanımı için C/Go araçları gerekli değildir. Tek komutluk kurulum
-mevcut Python'u kullanır; varsayılan olarak hiçbir araç, SDK veya ek Python
-paketi indirmez. C için yalnızca GCC bulunması AST isim değiştirmeye yetmez:
-Clang gerekir. Eksik araçların kurulumu aşağıdaki gibi isteğe bağlıdır.
+mevcut araçları kullanır; eksik araçları indirmeden önce tek tek onay ister.
+Ek Python paketi indirmez. C için yalnızca GCC bulunması AST isim değiştirmeye
+yetmez: Clang gerekir. C/Go araçlarının kurulumu isteğe bağlıdır.
 
 ## Dönüşümler
 
@@ -265,14 +265,16 @@ python3 app.obf.py
 
 Projeyi elle indirmeniz veya Git kurmanız gerekmez. Aşağıdaki tek satır
 deponun kaynak arşivini indirir, uygulamayı kullanıcı dizinine kopyalar ve
-`confuser` komutunu PATH'e ekler. **Mevcut Python 3.10+ gerekir.** Uygulamanın
+`confuser` komutunu PATH'e ekler. **Python 3.10+ gerekir; eksikse kurulum için onay sorulur.** Uygulamanın
 harici Python bağımlılığı yoktur; kurucu pip/venv kurmaz veya güncellemez.
 
-Varsayılan komut Python, Clang, Go, Homebrew, WinGet veya Windows SDK **indirmez**.
-Python eksikse açıklayıcı hata verir. Python örneğinin doğrulanması zorunludur;
-C/Go araçları varsa ayrıca denenir, eksik veya bozuksa uyarı verilir ve
-Python kullanımı engellenmez. Başarılı uygulama kurulumu, eksik bir C/Go
-motorunun da doğrulandığı anlamına gelmez. Kaynak arşivi için internet gerekir.
+Varsayılan komut eksik Python, Clang ve Go için **ayrı ayrı onay ister**.
+`y` / `yes` kurulumu onaylar; `n` veya yalnızca Enter indirmeyi atlar.
+Python eksikse ve kurulumu reddedilirse uygulama kurulumu tamamlanamaz.
+C/Go araçlarını reddetmek Python kullanımını engellemez. Python örneğinin
+doğrulanması zorunludur; C/Go araçları varsa ayrıca denenir, eksik veya bozuksa
+uyarı verilir. Başarılı uygulama kurulumu, eksik bir C/Go motorunun da
+doğrulandığı anlamına gelmez. Kaynak arşivi için internet gerekir.
 
 **Linux (Bash/Zsh; macOS'ta da kullanılabilir):**
 
@@ -304,24 +306,40 @@ confuser app.py -o app.obf.py --seed 42 --validate
 > Yalnızca güvendiğiniz kaynaklardan kurulum yapın. Kaynak arşivi geçici bir
 > klasöre indirilir ve işlem sonunda silinir; projeyi elle indirmeniz gerekmez.
 
-**İsteğe bağlı araç kurulumu:** Yukarıdaki Linux/macOS komutunda
-`--from-github` sonrasına `--install-tools`; Windows komutunun sonuna
-`-InstallTools` ekleyebilirsiniz. Bu seçenek ayrıca terminalde `EVET` onayı
-ister; onay verilmezse araç kurulumu başlamaz. Yüzlerce MB, Windows C++ Build
-Tools/SDK veya Apple geliştirici araçlarıyla birkaç GB indirme gerekebilir.
-Kesin boyut sisteme ve eksik bileşenlere bağlıdır. Onayı yalnızca bu indirmeyi
-istiyorsanız verin; yönetici/sudo izni veya yeniden başlatma gerekebilir.
+**Onay akışı:** Yukarıdaki komutlara ek seçenek koymanız gerekmez. Örneğin:
 
-Yalnızca bu isteğe bağlı mod Linux'ta `apt`, `dnf` veya `pacman`, macOS'ta
-Homebrew, Windows'ta WinGet kullanır; gerekirse Homebrew/WinGet de kurulur.
+```text
+Install clang? [y/N]: n
+Install go? [y/N]: y
+```
+
+Bu örnekte yalnızca Go kurulumu denenir. Kurulu araçlar tekrar indirilmez.
+Windows'ta Clang derleme kontrolü başarısızsa C++ Build Tools/SDK için ayrıca
+onay sorulur. Araçlar yüzlerce MB; Windows SDK veya Apple geliştirici araçları
+birkaç GB indirme gerektirebilir. Kurucu onaydan önce boyut uyarısını gösterir;
+kesin boyut sisteme ve eksik bileşenlere bağlıdır. Yönetici/sudo izni veya
+yeniden başlatma gerekebilir. Homebrew/WinGet eksikse bunlar için de ayrı onay alınır.
+
+Onaylanan araçlar Linux'ta `apt`, `dnf` veya `pacman`, macOS'ta Homebrew veya
+Apple Command Line Tools, Windows'ta WinGet üzerinden kurulur.
 Dağıtım paketleri minimum sürümleri sağlamalıdır (Ubuntu 24.04 veya sonrası).
 macOS geliştirici araçları grafik kurulum penceresi gerektirebilir; tüm sistem
 paketlerinin kullanıcı müdahalesi olmadan kurulacağı garanti edilmez.
 
+Araç sorularını tamamen atlamak için Linux/macOS komutundaki `--from-github`
+sonrasına `--no-tools`, Windows komutunun sonuna `-SkipTools` ekleyin.
+Etkileşimli terminal yoksa veya `CI=true` ise araç indirilmez. Eski
+`--install-tools` / `-InstallTools` seçenekleri uyumluluk için kabul edilir,
+ancak artık gerekli değildir ve onayı atlamaz. `confuser` uygulamasını açmak
+araç kurulumu başlatmaz; eksik araç soruları kurucuyu tekrar çalıştırınca gelir.
+Kurucu mesajları ve uygulamanın kendi hata mesajları İngilizcedir; menü
+etiketleri Türkçe kalır. İşletim sistemi/harici araç mesajlarının dili değişebilir.
+
 Güncellemek için varsayılan kurulum satırını tekrar çalıştırın. Yeni uygulama
 kopyası kontrol edildikten sonra başlatıcı değiştirilir; eski uygulama
-kopyaları otomatik silinmez. Yerel kaynak klasöründen varsayılan kurulum
-internetsiz çalışır. Go AST analizi ve Go derlemesinde otomatik toolchain/modül
+kopyaları otomatik silinmez. Python mevcutsa yerel kaynak klasöründen
+`sh install.sh --no-tools` veya `powershell -File .\install.ps1 -SkipTools`
+ile kurulum internetsiz çalışır. Go AST analizi ve Go derlemesinde otomatik toolchain/modül
 indirmeleri kapalıdır; proje bağımlılıklarını önceden kendiniz hazırlamalısınız.
 
 ### İndirilmiş kaynak klasöründen kurulum

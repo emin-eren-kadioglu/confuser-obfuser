@@ -5,6 +5,7 @@ import sys
 import os
 import shutil
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -13,43 +14,66 @@ ROOT = Path(__file__).resolve().parents[1]
 # Run the real local-copy/launcher path, with system discovery isolated. No VM,
 # tool installation, or persistent PATH change is needed for these regressions.
 WINDOWS_LOCAL_TEST = r'''
-param([string]$InstallerPath, [string]$PythonPath, [string]$TestRoot, [switch]$DenyTools)
+param([string]$InstallerPath, [string]$PythonPath, [string]$TestRoot, [string]$Case)
 $ErrorActionPreference = 'Stop'
 $savedUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $env:CONFUSER_TEST_SOURCE = Split-Path $InstallerPath -Parent
 $env:CONFUSER_TEST_PYTHON = $PythonPath
+$env:CONFUSER_TEST_CASE = $Case
+$global:ConfuserTestPrompts = @()
+$global:ConfuserTestDownloads = @()
 $source = Get-Content -Raw -Encoding UTF8 $InstallerPath
 $source = $source.Replace('$ProjectDir = $PSScriptRoot', '$ProjectDir = $env:CONFUSER_TEST_SOURCE')
 $overrides = @'
 function Find-CompatiblePython { return $env:CONFUSER_TEST_PYTHON }
 function Refresh-ProcessPath { }
-function Get-Command { param($Name, $ErrorAction) return $null }
-function Install-WingetPackage { throw 'UNEXPECTED DOWNLOAD' }
-function Install-WindowsCBuildTools { throw 'UNEXPECTED DOWNLOAD' }
-function Ensure-Winget { throw 'UNEXPECTED DOWNLOAD' }
-function Read-Host { param($Prompt) return 'HAYIR' }
+function Get-Command {
+    param($Name, $ErrorAction)
+    if ($env:CONFUSER_TEST_CASE -like 'sdk-*' -and $Name -in @('clang', 'go')) {
+        return [pscustomobject]@{ Source = "C:\mock\$Name.exe" }
+    }
+    return $null
+}
+function Test-CCompiler { return $false }
+function Install-WingetPackage {
+    param($PackageId, $DisplayName)
+    $global:ConfuserTestDownloads += $PackageId
+}
+function Install-WindowsCBuildTools { $global:ConfuserTestDownloads += 'SDK' }
+function Ensure-Winget { $global:ConfuserTestDownloads += 'UNEXPECTED WINGET' }
+function Test-InteractiveInput { return ($env:CONFUSER_TEST_CASE -ne 'no-console') }
+function Read-Host {
+    param($Prompt)
+    $global:ConfuserTestPrompts += $Prompt
+    if ($env:CONFUSER_TEST_CASE -eq 'clang' -and $Prompt -like '*clang?*') { return 'y' }
+    if ($env:CONFUSER_TEST_CASE -eq 'go' -and $Prompt -like '*go?*') { return 'yes' }
+    if ($env:CONFUSER_TEST_CASE -eq 'sdk-approve' -and $Prompt -like '*Build Tools/SDK?*') { return 'y' }
+    if ($env:CONFUSER_TEST_CASE -eq 'blank') { return '' }
+    return 'n'
+}
 '@
-$marker = 'Write-Step "Confuser Obfuser Windows kurulumu basliyor..."'
+$marker = 'Write-Step "Starting Confuser Obfuser setup for Windows..."'
 if (-not $source.Contains($marker)) { throw 'Test injection point missing' }
 $source = $source.Replace($marker, $overrides + "`n" + $marker)
 $app = Join-Path $TestRoot 'app'
 $bin = Join-Path $TestRoot 'bin'
 try {
-    if ($DenyTools) {
-        try {
-            & ([scriptblock]::Create($source)) -InstallRoot $app -UserBin $bin -InstallTools
-            throw 'Unconfirmed installation was accepted'
-        } catch {
-            if ($_.Exception.Message -notlike '*Iptal edildi; arac indirilmedi*') { throw }
-        }
-        if (Test-Path $app) { throw 'App was modified after rejected confirmation' }
-    } else {
-        & ([scriptblock]::Create($source)) -InstallRoot $app -UserBin $bin
-        foreach ($name in @('confuser', 'confuser-obfuser')) {
-            & (Join-Path $bin ($name + '.cmd')) --help
-            if ($LASTEXITCODE -ne 0) { throw 'Installed launcher failed' }
-        }
+    $options = @{ InstallRoot = $app; UserBin = $bin }
+    if ($Case -eq 'skip') { $options.SkipTools = $true }
+    & ([scriptblock]::Create($source)) @options
+    foreach ($name in @('confuser', 'confuser-obfuser')) {
+        & (Join-Path $bin ($name + '.cmd')) --help
+        if ($LASTEXITCODE -ne 0) { throw 'Installed launcher failed' }
     }
+    $expectedPrompts = 2
+    if ($Case -in @('skip', 'no-console')) { $expectedPrompts = 0 }
+    if ($Case -like 'sdk-*') { $expectedPrompts = 1 }
+    if ($ConfuserTestPrompts.Count -ne $expectedPrompts) { throw 'Unexpected prompt count' }
+    $expectedDownloads = ''
+    if ($Case -eq 'clang') { $expectedDownloads = 'LLVM.LLVM' }
+    if ($Case -eq 'go') { $expectedDownloads = 'GoLang.Go' }
+    if ($Case -eq 'sdk-approve') { $expectedDownloads = 'SDK' }
+    if (($ConfuserTestDownloads -join ',') -ne $expectedDownloads) { throw 'Wrong tool installation requested' }
 } finally {
     [Environment]::SetEnvironmentVariable('Path', $savedUserPath, 'User')
 }
@@ -69,6 +93,26 @@ foreach ($definition in $tree.FindAll({ param($node) $node -is [System.Managemen
     . ([scriptblock]::Create($definition.Extent.Text))
 }
 switch ($Case) {
+    'winget-rejected' {
+        $SkipTools = $false
+        function Get-Command { param($Name, $ErrorAction) return $null }
+        function Test-InteractiveInput { return $true }
+        function Read-Host { param($Prompt) return 'n' }
+        function Install-PackageProvider { throw 'UNEXPECTED DOWNLOAD' }
+        function Install-Module { throw 'UNEXPECTED DOWNLOAD' }
+        try {
+            Ensure-Winget
+            throw 'Unapproved WinGet setup succeeded'
+        } catch {
+            if ($_.Exception.Message -notlike '*WinGet installation was not approved*') { throw }
+        }
+    }
+    'ci-no-prompt' {
+        $SkipTools = $false
+        $env:CI = 'true'
+        function Read-Host { throw 'UNEXPECTED PROMPT' }
+        if (Confirm-ToolInstall 'clang' 'Test only') { throw 'CI approved a download' }
+    }
     'python-launcher-enumeration' {
         function Get-Command {
             param($Name, $ErrorAction)
@@ -152,28 +196,27 @@ def check_windows_installer_helpers(tmp_path: Path, case: str) -> None:
 class InstallerTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform == "win32", "Windows PowerShell tests")
     def test_windows_default_install_and_rejected_tool_consent(self) -> None:
-        for deny_tools in (False, True):
-            with self.subTest(deny_tools=deny_tools), tempfile.TemporaryDirectory() as directory:
+        for case in ("reject", "blank", "no-console", "skip", "clang", "go", "sdk-reject", "sdk-approve"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 driver = root / "local-test.ps1"
                 driver.write_text(WINDOWS_LOCAL_TEST, encoding="ascii")
                 command = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(driver),
                            "-InstallerPath", str(ROOT / "install.ps1"), "-PythonPath", sys.executable,
-                           "-TestRoot", str(root / "spaces & Türkçe ! % path")]
-                if deny_tools:
-                    command.append("-DenyTools")
+                           "-TestRoot", str(root / "spaces & Türkçe ! % path"), "-Case", case]
                 result = subprocess.run(command, capture_output=True, text=True, errors="replace", timeout=60)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("WINDOWS_LOCAL_INSTALL_TEST_PASSED", result.stdout)
 
     @unittest.skipUnless(sys.platform == "win32", "Windows PowerShell tests")
     def test_windows_helpers(self) -> None:
-        for case in ("python-launcher-enumeration", "python-fallback", "compiler-warning", "compiler-failure", "build-tools-arm64", "build-tools-x64"):
+        for case in ("winget-rejected", "ci-no-prompt", "python-launcher-enumeration", "python-fallback", "compiler-warning", "compiler-failure", "build-tools-arm64", "build-tools-x64"):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
                 check_windows_installer_helpers(Path(directory), case)
 
     def test_windows_installer_is_ascii_for_powershell_51(self) -> None:
         (ROOT / "install.ps1").read_bytes().decode("ascii")
+        (ROOT / "install.sh").read_bytes().decode("ascii")
 
     @unittest.skipIf(os.name == "nt", "POSIX shell tests")
     def test_posix_install_without_compilers_or_package_downloads(self) -> None:
@@ -193,11 +236,12 @@ class InstallerTests(unittest.TestCase):
             for attempt in range(2):
                 with self.subTest(attempt=attempt):
                     result = subprocess.run([str(tools / "sh"), str(ROOT / "install.sh")],
-                                            env=environment, capture_output=True, text=True, timeout=60)
+                                            env=environment, capture_output=True, text=True, timeout=60,
+                                            start_new_session=True, stdin=subprocess.DEVNULL)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                    self.assertIn("clang bulunamadı", result.stdout)
-                    self.assertIn("go bulunamadı", result.stdout)
-                    self.assertIn("Python doğrulandı", result.stdout)
+                    self.assertIn("clang was not found", result.stdout)
+                    self.assertIn("go was not found", result.stdout)
+                    self.assertIn("Python validated", result.stdout)
                     self.assertIn("go_ast_helper/main.go", "\n".join(str(p) for p in app.rglob("main.go")))
                     for command in ("confuser", "confuser-obfuser"):
                         help_result = subprocess.run([str(user_bin / command), "--help"], env=environment,
@@ -214,10 +258,89 @@ class InstallerTests(unittest.TestCase):
             environment = os.environ.copy()
             environment["PATH"] = str(tools)
             result = subprocess.run([str(tools / "sh"), str(ROOT / "install.sh")], env=environment,
-                                    capture_output=True, text=True, timeout=15)
+                                    capture_output=True, text=True, timeout=15,
+                                    start_new_session=True, stdin=subprocess.DEVNULL)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Python 3.10+ gerekiyor", result.stdout)
-            self.assertIn("Araç indirilmedi", result.stdout)
+            self.assertIn("Python 3.10+ is required", result.stdout)
+            self.assertIn("No download started", result.stdout)
+
+    @unittest.skipIf(os.name == "nt", "POSIX terminal tests")
+    def test_posix_per_tool_consent_in_terminal(self) -> None:
+        import pty
+        import select
+        import signal
+
+        cases = (
+            ("reject", ("n", "n"), (), ""),
+            ("blank", ("", ""), (), ""),
+            ("clang", ("y", "n"), (), "update\ninstall -y clang\n"),
+            ("go", ("n", "yes"), (), "update\ninstall -y golang-go\n"),
+            ("both", ("yes", "y"), (), "update\ninstall -y clang\ninstall -y golang-go\n"),
+            ("skip", (), ("--no-tools",), ""),
+            ("ci", (), (), ""),
+            ("python-reject", ("n",), (), ""),
+            ("python-approve", ("y",), (), "update\ninstall -y python3\n"),
+        )
+        for case, answers, options, expected_log in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                tools = root / "tools"
+                tools.mkdir()
+                for name in ("sh", "dirname", "mkdir", "mktemp", "rm"):
+                    (tools / name).symlink_to(shutil.which(name))
+                if not case.startswith("python-"):
+                    (tools / "python3").symlink_to(sys.executable)
+                # Exercise the Linux branch on macOS too. All package commands
+                # are harmless stubs; an unexpected approval cannot download.
+                for name, content in {
+                    "uname": "#!/bin/sh\nprintf 'Linux\\n'\n",
+                    "id": "#!/bin/sh\nprintf '0\\n'\n",
+                    "apt-get": '#!/bin/sh\nprintf "%s\\n" "$*" >> "$CONFUSER_PACKAGE_LOG"\n',
+                }.items():
+                    stub = tools / name
+                    stub.write_text(content, encoding="ascii")
+                    stub.chmod(0o755)
+                user_bin = root / "bin"
+                log = root / "packages.log"
+                environment = os.environ.copy()
+                environment.update(PATH=os.pathsep.join((str(user_bin), str(tools))),
+                                   CI="true" if case == "ci" else "",
+                                   CONFUSER_PACKAGE_LOG=str(log), CONFUSER_USER_BIN=str(user_bin),
+                                   CONFUSER_INSTALL_ROOT=str(root / "app"))
+                pid, terminal = pty.fork()
+                if pid == 0:
+                    os.execve(str(tools / "sh"), ["sh", str(ROOT / "install.sh"), *options], environment)
+                output = b""
+                sent = 0
+                status = None
+                deadline = time.monotonic() + 30
+                try:
+                    while time.monotonic() < deadline:
+                        if select.select([terminal], [], [], 0.1)[0]:
+                            try:
+                                data = os.read(terminal, 65536)
+                            except OSError:
+                                data = b""
+                            output += data
+                            if output.count(b"[y/N]: ") > sent and sent < len(answers):
+                                os.write(terminal, (answers[sent] + "\n").encode("ascii"))
+                                sent += 1
+                        finished, status_value = os.waitpid(pid, os.WNOHANG)
+                        if finished:
+                            status = status_value
+                            break
+                    self.assertIsNotNone(status, output.decode(errors="replace"))
+                finally:
+                    if status is None:
+                        os.kill(pid, signal.SIGKILL)
+                        os.waitpid(pid, 0)
+                    os.close(terminal)
+                self.assertEqual(sent, len(answers), output.decode(errors="replace"))
+                self.assertEqual(os.waitstatus_to_exitcode(status), 1 if case.startswith("python-") else 0,
+                                 output.decode(errors="replace"))
+                self.assertEqual(log.read_text() if log.exists() else "", expected_log)
+                if not case.startswith("python-"):
+                    self.assertTrue((user_bin / "confuser").is_file())
 
     @unittest.skipIf(os.name == "nt", "POSIX shell tests")
     def test_posix_optional_install_fails_closed_without_confirmation(self) -> None:
@@ -231,5 +354,5 @@ class InstallerTests(unittest.TestCase):
                                     env=environment, start_new_session=True, stdin=subprocess.DEVNULL,
                                     capture_output=True, text=True, timeout=15)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("GB", result.stdout)
-            self.assertIn("Onay alınamadı; araç indirilmedi", result.stdout)
+            self.assertIn("hundreds of MB", result.stdout)
+            self.assertIn("No download started", result.stdout)

@@ -120,6 +120,7 @@ class TerminalUITests(unittest.TestCase):
         with patch.object(ui, "_pause"):
             ui._obfuscate()
         self.assertIn(StatusColor.ERROR + Style.BOLD, ui.stdout.getvalue())
+        self.assertIn("Error: Select a source file first.", ui.stdout.getvalue())
         self.assertNotIn(StatusColor.SUCCESS, ui.stdout.getvalue())
 
     def test_validation_failure_is_red_and_does_not_report_success(self) -> None:
@@ -132,6 +133,6 @@ class TerminalUITests(unittest.TestCase):
                 validate.return_value.equivalent = False
                 ui._obfuscate()
             output = ui.stdout.getvalue()
-            self.assertIn(StatusColor.ERROR + Style.BOLD + "  Doğrulama başarısız", output)
+            self.assertIn(StatusColor.ERROR + Style.BOLD + "  Validation failed", output)
             self.assertNotIn(StatusColor.SUCCESS, output)
             self.assertFalse(source.with_name("demo.obf.py").exists())

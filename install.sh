@@ -4,12 +4,13 @@
 set -eu
 
 from_github=0
-install_tools=0
+skip_tools=0
 for option in "$@"; do
     case "$option" in
         --from-github) from_github=1 ;;
-        --install-tools) install_tools=1 ;;
-        *) printf 'Bilinmeyen seçenek: %s\n' "$option" >&2; exit 1 ;;
+        --install-tools) : ;; # Compatibility: prompts are now enabled by default.
+        --no-tools) skip_tools=1 ;;
+        *) printf 'Error: unknown option: %s\n' "$option" >&2; exit 1 ;;
     esac
 done
 
@@ -19,8 +20,8 @@ if [ "$from_github" -eq 1 ]; then
     curl -fsSL https://github.com/emin-eren-kadioglu/confuser-obfuser/archive/refs/heads/main.tar.gz -o "$source_tmp/source.tar.gz"
     mkdir "$source_tmp/source"
     tar -xzf "$source_tmp/source.tar.gz" -C "$source_tmp/source" --strip-components=1
-    if [ "$install_tools" -eq 1 ]; then
-        sh "$source_tmp/source/install.sh" --install-tools
+    if [ "$skip_tools" -eq 1 ]; then
+        sh "$source_tmp/source/install.sh" --no-tools
     else
         sh "$source_tmp/source/install.sh"
     fi
@@ -52,13 +53,32 @@ as_root() {
     fi
 }
 
-install_macos_tools() {
-    if python_ready && have clang && have go; then
-        return
+confirm_install() {
+    say "$1"
+    say "$2"
+    if [ "$skip_tools" -eq 1 ] || [ "${CI:-}" = "true" ]; then
+        say "Skipped: tool installation is disabled. No download started."
+        return 1
     fi
+    # stdin may contain the installer itself (curl | sh), so use the terminal.
+    answer=""
+    if ! { printf 'Install %s? [y/N]: ' "$3" >/dev/tty; } 2>/dev/null ||
+       ! { IFS= read -r answer </dev/tty; } 2>/dev/null; then
+        say "Skipped: no interactive confirmation available. No download started."
+        return 1
+    fi
+    case "$answer" in
+        y|Y|yes|YES|Yes) return 0 ;;
+        *) say "Skipped: $3 was not approved. No download started."; return 1 ;;
+    esac
+}
+
+ensure_brew() {
     if ! have brew; then
-        say "Homebrew bulunamadı; resmi Homebrew kurucusu başlatılıyor..."
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        confirm_install "Homebrew is not installed." \
+            "Homebrew and its developer-tool dependencies may download several GB and require administrator access." "Homebrew" || return 1
+        brew_script=$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh) || return 1
+        /bin/bash -c "$brew_script" || return 1
         if [ -x /opt/homebrew/bin/brew ]; then
             eval "$(/opt/homebrew/bin/brew shellenv)"
         elif [ -x /usr/local/bin/brew ]; then
@@ -66,88 +86,84 @@ install_macos_tools() {
         fi
     fi
     if ! have brew; then
-        say "Hata: Homebrew kurulamadı."
-        exit 1
-    fi
-    if ! python_ready; then
-        brew install python@3.14
-        PATH="$(brew --prefix python@3.14)/libexec/bin:$PATH"
-        export PATH
-    fi
-    if ! have go; then
-        brew install go
-    fi
-    if ! have clang; then
-        say "Apple Command Line Tools kurulumu açılıyor..."
-        xcode-select --install || true
-        say "Kurulum tamamlandıktan sonra install.sh dosyasını yeniden çalıştır."
-        exit 1
+        say "Warning: Homebrew could not be installed."
+        return 1
     fi
 }
 
-install_linux_tools() {
-    missing=""
-    python_ready || missing="$missing python3"
-    have clang || missing="$missing clang"
-    have go || missing="$missing go"
-    [ -z "$missing" ] && return
-
-    if have apt-get; then
-        set --
-        python_ready || set -- "$@" python3
-        have clang || set -- "$@" clang
-        have go || set -- "$@" golang-go
-        as_root apt-get update
-        as_root apt-get install -y "$@"
+apt_refreshed=0
+install_tool() {
+    # The caller must obtain consent for this one tool before entering here.
+    if [ "$OS_NAME" = Darwin ]; then
+        case "$1" in
+            clang)
+                xcode-select --install || return 1
+                say "Complete the Apple Command Line Tools dialog, then run this installer again."
+                return 0
+                ;;
+            python3)
+                ensure_brew || return 1
+                brew install python@3.14 || return 1
+                PATH="$(brew --prefix python@3.14)/libexec/bin:$PATH"
+                export PATH
+                ;;
+            go) ensure_brew && brew install go || return 1 ;;
+        esac
+    elif have apt-get; then
+        package_name=$1
+        [ "$1" != go ] || package_name=golang-go
+        if [ "$apt_refreshed" -eq 0 ]; then
+            as_root apt-get update || return 1
+            apt_refreshed=1
+        fi
+        as_root apt-get install -y "$package_name" || return 1
     elif have dnf; then
-        set --
-        python_ready || set -- "$@" python3
-        have clang || set -- "$@" clang
-        have go || set -- "$@" golang
-        as_root dnf install -y "$@"
+        package_name=$1
+        [ "$1" != go ] || package_name=golang
+        as_root dnf install -y "$package_name" || return 1
     elif have pacman; then
-        set --
-        python_ready || set -- "$@" python
-        have clang || set -- "$@" clang
-        have go || set -- "$@" go
-        as_root pacman -S --needed --noconfirm "$@"
+        package_name=$1
+        [ "$1" != python3 ] || package_name=python
+        as_root pacman -S --needed --noconfirm "$package_name" || return 1
     else
-        say "Hata: Eksik araçlar:$missing"
-        say "Desteklenen bir paket yöneticisi bulunamadı (apt, dnf veya pacman)."
-        exit 1
+        say "Warning: no supported package manager found (apt, dnf or pacman). Install $1 manually."
+        return 1
     fi
 }
 
 case "$OS_NAME" in
     Darwin|Linux) ;;
     *)
-        say "Hata: install.sh yalnızca macOS ve Linux'u destekliyor."
+        say "Error: install.sh supports only macOS and Linux."
         exit 1
         ;;
 esac
 
-if [ "$install_tools" -eq 1 ]; then
-    say "İsteğe bağlı Python/Clang/Go kurulumu: bağımlılıklar yüzlerce MB veya birkaç GB indirebilir."
-    say "Paket yöneticisi/Apple geliştirici araçları da kurulabilir. Yönetici onayı gerekebilir."
-    say "Devam etmek için EVET yazın (diğer yanıtlar indirmeyi iptal eder):"
-    answer=""
-    if ! (test -r /dev/tty) 2>/dev/null || ! { IFS= read -r answer </dev/tty; } 2>/dev/null; then
-        say "Onay alınamadı; araç indirilmedi. Etkileşimli terminalden tekrar deneyin."
-        exit 1
+if ! python_ready; then
+    if confirm_install "Python 3.10+ is required but was not found." \
+        "Python and dependencies may download hundreds of MB and require administrator access." "Python"; then
+        install_tool python3 || say "Warning: Python installation failed."
     fi
-    [ "$answer" = "EVET" ] || { say "İptal edildi; araç indirilmedi."; exit 1; }
-    case "$OS_NAME" in
-        Darwin) install_macos_tools ;;
-        Linux) install_linux_tools ;;
-    esac
 fi
 
 if ! python_ready; then
-    say "Hata: Python 3.10+ gerekiyor. Araç indirilmedi. Python kurun veya --install-tools ile onaylı kurulumu seçin."
+    say "Error: Python 3.10+ is required. Install Python, then run this installer again."
     exit 1
 fi
 
-say "Uygulama hazırlanıyor (pip veya ek Python paketi indirilmez)..."
+for optional_tool in clang go; do
+    if ! have "$optional_tool"; then
+        download_note="This tool and dependencies may download hundreds of MB and require administrator access."
+        if [ "$OS_NAME" = Darwin ] && [ "$optional_tool" = clang ]; then
+            download_note="Apple Command Line Tools may download several GB and require a graphical setup dialog."
+        fi
+        if confirm_install "$optional_tool is not installed (optional for Python use)." "$download_note" "$optional_tool"; then
+            install_tool "$optional_tool" || say "Warning: $optional_tool installation failed; Python installation will continue."
+        fi
+    fi
+done
+
+say "Preparing the application (no pip or additional Python packages are downloaded)..."
 mkdir -p "$INSTALL_ROOT" "$USER_BIN"
 PYTHON_EXE=$(python3 -c 'import sys; print(sys.executable)')
 RELEASE_DIR=$(mktemp -d "$INSTALL_ROOT/app.XXXXXX")
@@ -164,21 +180,21 @@ PY
 
 CHECK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/confuser-check.XXXXXX")
 trap 'rm -rf -- "$CHECK_DIR"' 0
-say "Python motoru kontrol ediliyor..."
+say "Checking the Python engine..."
 "$PYTHON_EXE" "$RELEASE_DIR/confuser_obfuser.py" "$PROJECT_DIR/examples/demo.py" -o "$CHECK_DIR/demo.obf.py" --seed 42 --validate
-# Optional tools are probed, never downloaded. Their failure must not prevent Python use.
+# Validation never downloads tools. Optional failures must not prevent Python use.
 export GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off
 for language in c go; do
     tool=clang
     [ "$language" != go ] || tool=go
     if have "$tool"; then
         if "$PYTHON_EXE" "$RELEASE_DIR/confuser_obfuser.py" "$PROJECT_DIR/examples/demo.$language" -o "$CHECK_DIR/demo.obf.$language" --seed 42 --validate --timeout 60; then
-            say "$language motoru doğrulandı."
+            say "$language engine validated."
         else
-            say "Uyarı: $language motor kontrolü geçmedi; mevcut araçları/SDK'yı kontrol edin. Otomatik indirme yapılmadı."
+            say "Warning: $language validation failed. Check your toolchain/SDK. Python remains available."
         fi
     else
-        say "Uyarı: $tool bulunamadı; $language kontrolü atlandı. Python kullanılabilir; araç kurulmadı."
+        say "Warning: $tool was not found; $language validation skipped. Python remains available."
     fi
 done
 
@@ -243,10 +259,10 @@ PY
 fi
 
 say ""
-say "✓ Confuser Obfuser kuruldu; Python doğrulandı. C/Go durumu yukarıda ayrı gösterildi."
+say "OK - Confuser Obfuser installed; Python validated. C/Go status is shown separately above."
 if [ "$path_ready" -eq 1 ]; then
-    say "Başlatmak için: confuser"
+    say "Run: confuser"
 else
-    say "Yeni bir terminal açıp çalıştır: confuser"
-    say "Bu terminalde hemen kullanmak için: export PATH=\"$USER_BIN:\$PATH\""
+    say "Open a new terminal and run: confuser"
+    say "To use it in this terminal: export PATH=\"$USER_BIN:\$PATH\""
 fi

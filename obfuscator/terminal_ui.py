@@ -218,11 +218,11 @@ class TerminalUI:
         value = self._input(self._style("  Python, C veya Go dosyasının yolunu gir: ", Style.ACCENT))
         path = self._clean_path(value)
         if not path.is_file():
-            self._write(self._style("  Hata: Dosya bulunamadı.", StatusColor.ERROR, Style.BOLD))
+            self._write(self._style("  Error: File not found.", StatusColor.ERROR, Style.BOLD))
             self._pause()
             return
         if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
-            self._write(self._style("  Hata: .py, .pyw, .c veya .go dosyası seçmelisin.", StatusColor.ERROR, Style.BOLD))
+            self._write(self._style("  Error: Select a .py, .pyw, .c or .go file.", StatusColor.ERROR, Style.BOLD))
             self._pause()
             return
         self.state.input_path = path.resolve()
@@ -234,11 +234,11 @@ class TerminalUI:
         if not path.suffix and self.state.input_path is not None:
             path = path.with_suffix(self.state.input_path.suffix)
         if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
-            self._write(self._style("  Hata: Çıktı uzantısı .py, .pyw, .c veya .go olmalı.", StatusColor.ERROR, Style.BOLD))
+            self._write(self._style("  Error: Output extension must be .py, .pyw, .c or .go.", StatusColor.ERROR, Style.BOLD))
             self._pause()
             return
         if self.state.input_path is not None and detect_language(path) is not detect_language(self.state.input_path):
-            self._write(self._style("  Hata: Kaynak ve çıktı aynı dil uzantısını kullanmalı.", StatusColor.ERROR, Style.BOLD))
+            self._write(self._style("  Error: Source and output must use the same language.", StatusColor.ERROR, Style.BOLD))
             self._pause()
             return
         self.state.output_path = path.resolve()
@@ -251,7 +251,7 @@ class TerminalUI:
         try:
             self.state.seed = int(value)
         except ValueError:
-            self._write(self._style("  Hata: Seed bir tam sayı olmalı.", StatusColor.ERROR, Style.BOLD))
+            self._write(self._style("  Error: Seed must be an integer.", StatusColor.ERROR, Style.BOLD))
             self._pause()
 
     def _passes_menu(self) -> None:
@@ -292,7 +292,7 @@ class TerminalUI:
             if iterations < 1:
                 raise ValueError
         except ValueError:
-            self._write(self._style("  Hata: Tur sayısı en az 1 olan bir tam sayı olmalı.", StatusColor.ERROR, Style.BOLD))
+            self._write(self._style("  Error: Iterations must be an integer of at least 1.", StatusColor.ERROR, Style.BOLD))
             self._pause()
             return
         self.state.iterations = iterations
@@ -302,12 +302,12 @@ class TerminalUI:
 
     def _obfuscate(self) -> None:
         if self.state.input_path is None:
-            self._write(self._style("  Önce bir kaynak dosya seçmelisin.", StatusColor.ERROR, Style.BOLD))
+            self._write(self._style("  Error: Select a source file first.", StatusColor.ERROR, Style.BOLD))
             self._pause()
             return
         output_path = self.state.output_path or default_output_path(self.state.input_path)
         if output_path == self.state.input_path:
-            self._write(self._style("  Hata: Çıktı yolu kaynak dosyayla aynı olamaz.", StatusColor.ERROR, Style.BOLD))
+            self._write(self._style("  Error: Output path must differ from the source path.", StatusColor.ERROR, Style.BOLD))
             self._pause()
             return
         if output_path.exists():
@@ -344,22 +344,22 @@ class TerminalUI:
                 )
                 if not validation.equivalent:
                     if not validation.original_compiled:
-                        detail = "Orijinal kaynak derlenemedi."
+                        detail = "Original source could not be compiled."
                     elif not validation.obfuscated_compiled:
-                        detail = "Dönüştürülmüş kaynak derlenemedi."
+                        detail = "Obfuscated source could not be compiled."
                     else:
-                        detail = "Program çıkış kodu veya çıktıları farklı."
-                    self._write(self._style(f"  Doğrulama başarısız: {detail}", StatusColor.ERROR, Style.BOLD))
+                        detail = "Program exit status or output differs."
+                    self._write(self._style(f"  Validation failed: {detail}", StatusColor.ERROR, Style.BOLD))
                     self._pause()
                     return
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(result, encoding="utf-8")
         except subprocess.TimeoutExpired:
-            self._write(self._style("  Hata: Doğrulama zaman aşımına uğradı (5 saniye).", StatusColor.ERROR, Style.BOLD))
+            self._write(self._style("  Error: Validation timed out (5 seconds).", StatusColor.ERROR, Style.BOLD))
             self._pause()
             return
         except (OSError, SyntaxError, ValueError) as error:
-            self._write(self._style(f"  Hata: {error}", StatusColor.ERROR, Style.BOLD))
+            self._write(self._style(f"  Error: {error}", StatusColor.ERROR, Style.BOLD))
             self._pause()
             return
 
