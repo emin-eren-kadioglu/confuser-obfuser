@@ -2,12 +2,29 @@
 [CmdletBinding()]
 param(
     [string]$InstallRoot = "$env:LOCALAPPDATA\ConfuserObfuser",
-    [string]$UserBin = "$env:LOCALAPPDATA\ConfuserObfuser\bin"
+    [string]$UserBin = "$env:LOCALAPPDATA\ConfuserObfuser\bin",
+    [switch]$FromGitHub
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ProjectDir = $PSScriptRoot
+
+if ($FromGitHub) {
+    $sourceTemp = Join-Path ([IO.Path]::GetTempPath()) ("confuser-source-" + [Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $sourceTemp | Out-Null
+    try {
+        $archive = Join-Path $sourceTemp "source.zip"
+        Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/emin-eren-kadioglu/confuser-obfuser/archive/refs/heads/main.zip" -OutFile $archive
+        Expand-Archive -LiteralPath $archive -DestinationPath $sourceTemp
+        & powershell -NoProfile -ExecutionPolicy Bypass -File "$sourceTemp\confuser-obfuser-main\install.ps1" -InstallRoot $InstallRoot -UserBin $UserBin
+        if ($LASTEXITCODE -ne 0) { throw "Kurulum tamamlanamadi (cikis kodu: $LASTEXITCODE)." }
+        $env:Path = "$UserBin;$env:Path;$([Environment]::GetEnvironmentVariable('Path', 'User'));$([Environment]::GetEnvironmentVariable('Path', 'Machine'))"
+    } finally {
+        Remove-Item -LiteralPath $sourceTemp -Recurse -Force
+    }
+    return
+}
 
 function Write-Step([string]$Message) {
     Write-Host $Message -ForegroundColor Cyan
@@ -16,7 +33,7 @@ function Write-Step([string]$Message) {
 function Refresh-ProcessPath {
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    $env:Path = "$machinePath;$userPath"
+    $env:Path = "$env:Path;$machinePath;$userPath"
 
     $knownToolDirectories = @(
         "$env:ProgramFiles\LLVM\bin",
@@ -34,34 +51,41 @@ function Find-CompatiblePython {
     $launcher = Get-Command py -ErrorAction SilentlyContinue
     if ($launcher) {
         foreach ($version in @("-3.14", "-3.13", "-3.12", "-3.11", "-3.10")) {
-            $result = & $launcher.Source $version -c "import sys; print(sys.executable)" 2>$null
-            if ($LASTEXITCODE -eq 0 -and $result) {
-                return $result.Trim()
-            }
+            try {
+                $result = & $launcher.Source $version -c "import sys; print(sys.executable)" 2>$null
+                if ($LASTEXITCODE -eq 0 -and $result) {
+                    return $result.Trim()
+                }
+            } catch { continue }
         }
     }
 
     $python = Get-Command python -ErrorAction SilentlyContinue
     if ($python) {
-        $result = & $python.Source -c "import sys; assert sys.version_info >= (3, 10); print(sys.executable)" 2>$null
-        if ($LASTEXITCODE -eq 0 -and $result) {
-            return $result.Trim()
-        }
+        try {
+            $result = & $python.Source -c "import sys; assert sys.version_info >= (3, 10); print(sys.executable)" 2>$null
+            if ($LASTEXITCODE -eq 0 -and $result) {
+                return $result.Trim()
+            }
+        } catch { }
     }
 
     $installed = Get-ChildItem "$env:LOCALAPPDATA\Programs\Python" -Filter python.exe -Recurse -ErrorAction SilentlyContinue |
         Sort-Object FullName -Descending |
         Select-Object -First 1
     if ($installed) {
-        $result = & $installed.FullName -c "import sys; assert sys.version_info >= (3, 10); print(sys.executable)" 2>$null
-        if ($LASTEXITCODE -eq 0 -and $result) {
-            return $result.Trim()
-        }
+        try {
+            $result = & $installed.FullName -c "import sys; assert sys.version_info >= (3, 10); print(sys.executable)" 2>$null
+            if ($LASTEXITCODE -eq 0 -and $result) {
+                return $result.Trim()
+            }
+        } catch { }
     }
     return $null
 }
 
 function Install-WingetPackage([string]$PackageId, [string]$DisplayName) {
+    Ensure-Winget
     Write-Step "$DisplayName kuruluyor..."
     & winget install --id $PackageId --exact --source winget --silent --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) {
@@ -75,12 +99,19 @@ function Test-CCompiler {
     New-Item -ItemType Directory -Path $probeDirectory | Out-Null
     $probeSource = Join-Path $probeDirectory "probe.c"
     $probeBinary = Join-Path $probeDirectory "probe.exe"
-    [IO.File]::WriteAllText($probeSource, "int main(void) { return 0; }", [Text.Encoding]::ASCII)
-    & clang $probeSource -o $probeBinary 2>$null
-    return ($LASTEXITCODE -eq 0 -and (Test-Path $probeBinary))
+    [IO.File]::WriteAllText($probeSource, "#include <stdio.h>`nint main(void) { puts(`"ok`"); return 0; }", [Text.Encoding]::ASCII)
+    try {
+        & clang $probeSource -o $probeBinary 2>&1 | Out-Null
+        return ($LASTEXITCODE -eq 0 -and (Test-Path $probeBinary))
+    } catch {
+        return $false
+    } finally {
+        Remove-Item -LiteralPath $probeDirectory -Recurse -Force
+    }
 }
 
 function Install-WindowsCBuildTools {
+    Ensure-Winget
     Write-Step "Windows C SDK ve linker bilesenleri kuruluyor..."
     $installerOptions = "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
     & winget install --id "Microsoft.VisualStudio.2022.BuildTools" --exact --source winget --accept-package-agreements --accept-source-agreements --override $installerOptions
@@ -90,12 +121,22 @@ function Install-WindowsCBuildTools {
     Refresh-ProcessPath
 }
 
-Write-Step "Confuser Obfuser Windows kurulumu basliyor..."
-
-if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-    throw "Winget bulunamadi. Microsoft App Installer'i guncelleyip install.ps1 dosyasini yeniden calistirin."
+function Ensure-Winget {
+    if (Get-Command winget -ErrorAction SilentlyContinue) { return }
+    Write-Step "Winget kuruluyor..."
+    Install-PackageProvider -Name NuGet -Force -Scope CurrentUser | Out-Null
+    Install-Module -Name Microsoft.WinGet.Client -Repository PSGallery -Force -Scope CurrentUser
+    Import-Module Microsoft.WinGet.Client
+    Repair-WinGetPackageManager -Latest
+    Refresh-ProcessPath
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        throw "Winget kurulamadi. Windows App Installer'i kontrol edip ayni kurulum komutunu yeniden calistirin."
+    }
 }
 
+Write-Step "Confuser Obfuser Windows kurulumu basliyor..."
+
+Refresh-ProcessPath
 $pythonExe = Find-CompatiblePython
 if (-not $pythonExe) {
     Install-WingetPackage "Python.Python.3.12" "Python 3.12"
@@ -129,18 +170,22 @@ if (-not (Test-CCompiler)) {
 Write-Step "Izole uygulama ortami hazirlaniyor..."
 New-Item -ItemType Directory -Force -Path $InstallRoot, $UserBin | Out-Null
 & $pythonExe -m venv "$InstallRoot\venv"
+if ($LASTEXITCODE -ne 0) { throw "Python sanal ortami olusturulamadi." }
 $venvPython = "$InstallRoot\venv\Scripts\python.exe"
 & $venvPython -m pip install --upgrade pip
+if ($LASTEXITCODE -ne 0) { throw "Pip hazirlanamadi." }
 & $venvPython -m pip install --upgrade $ProjectDir
+if ($LASTEXITCODE -ne 0) { throw "Uygulama paketi kurulamadi." }
 
-$entryPoint = "$InstallRoot\venv\Scripts\confuser-obfuser.exe"
+$entryPoint = "$InstallRoot\venv\Scripts\confuser.exe"
 if (-not (Test-Path $entryPoint)) {
-    throw "confuser-obfuser giris komutu olusturulamadi."
+    throw "confuser giris komutu olusturulamadi."
 }
 
-$wrapper = "$UserBin\confuser-obfuser.cmd"
+$wrapper = "$UserBin\confuser.cmd"
 $wrapperContent = "@echo off`r`n`"$entryPoint`" %*`r`n"
 [IO.File]::WriteAllText($wrapper, $wrapperContent, [Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllText("$UserBin\confuser-obfuser.cmd", $wrapperContent, [Text.UTF8Encoding]::new($false))
 
 $currentUserPath = [Environment]::GetEnvironmentVariable("Path", "User")
 $userSegments = @($currentUserPath -split ";" | Where-Object { $_ })
@@ -160,20 +205,24 @@ $env:Path = "$UserBin;$env:Path"
 $checkDirectory = Join-Path ([IO.Path]::GetTempPath()) ("confuser-check-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $checkDirectory | Out-Null
 
-Write-Step "Python motoru kontrol ediliyor..."
-& $wrapper "$ProjectDir\examples\demo.py" -o "$checkDirectory\demo.obf.py" --seed 42 --validate
-if ($LASTEXITCODE -ne 0) { throw "Python motor kontrolu basarisiz." }
+try {
+    Write-Step "Python motoru kontrol ediliyor..."
+    & $wrapper "$ProjectDir\examples\demo.py" -o "$checkDirectory\demo.obf.py" --seed 42 --validate
+    if ($LASTEXITCODE -ne 0) { throw "Python motor kontrolu basarisiz." }
 
-Write-Step "C/Clang AST motoru kontrol ediliyor..."
-$env:CC = (Get-Command clang).Source
-$env:CLANG = (Get-Command clang).Source
-& $wrapper "$ProjectDir\examples\demo.c" -o "$checkDirectory\demo.obf.c" --seed 42 --validate
-if ($LASTEXITCODE -ne 0) { throw "C motor kontrolu basarisiz." }
+    Write-Step "C/Clang AST motoru kontrol ediliyor..."
+    $env:CC = (Get-Command clang).Source
+    $env:CLANG = (Get-Command clang).Source
+    & $wrapper "$ProjectDir\examples\demo.c" -o "$checkDirectory\demo.obf.c" --seed 42 --validate
+    if ($LASTEXITCODE -ne 0) { throw "C motor kontrolu basarisiz." }
 
-Write-Step "Go AST motoru kontrol ediliyor..."
-& $wrapper "$ProjectDir\examples\demo.go" -o "$checkDirectory\demo.obf.go" --seed 42 --validate
-if ($LASTEXITCODE -ne 0) { throw "Go motor kontrolu basarisiz." }
+    Write-Step "Go AST motoru kontrol ediliyor..."
+    & $wrapper "$ProjectDir\examples\demo.go" -o "$checkDirectory\demo.obf.go" --seed 42 --validate
+    if ($LASTEXITCODE -ne 0) { throw "Go motor kontrolu basarisiz." }
+} finally {
+    Remove-Item -LiteralPath $checkDirectory -Recurse -Force
+}
 
 Write-Host ""
 Write-Host "OK - Confuser Obfuser kuruldu ve uc motor dogrulandi." -ForegroundColor Green
-Write-Host "Yeni bir PowerShell veya CMD acip calistirin: confuser-obfuser"
+Write-Host "Baslatmak icin: confuser"

@@ -85,9 +85,9 @@ olarak gösterir. Kullanıcının ayrıca dil seçmesine gerek yoktur.
 - Go isim değiştirme ve Go doğrulaması için Go 1.22 veya üzeri
 - UTF-8 kaynak dosyaları
 
-Tek komutluk kurulum gerektiğinde Python'u otomatik indirir. C ve Go için
-Clang ve Go araçlarının ayrıca kurulu ve PATH üzerinde olması gerekir.
-Mevcut kurulum betikleri bu araçları da kontrol edip eksikleri kurmayı dener.
+Tek komutluk kurulum Python, sanal ortam desteği, Clang ve Go'yu kontrol eder;
+eksikleri sistemin paket yöneticisiyle kurar. Windows'ta gerekli C SDK ve
+bağlayıcı bileşenlerini de kontrol eder.
 
 ## Dönüşümler
 
@@ -260,24 +260,28 @@ python3 app.obf.py
 
 ### Tek komutla kurulum
 
-Projeyi indirmeniz, Git veya Python kurmanız gerekmez. Aşağıdaki tek satırı
-terminalinize yapıştırın. Yönetici yetkisi gerekmez; internet bağlantısı gerekir.
-Kurulum, [uv](https://docs.astral.sh/uv/getting-started/installation/) aracını ve
-gerektiğinde Python 3.14'ü indirir, uygulamayı izole bir ortama kurar ve komut
-dizinini kullanıcı PATH'ine ekler. Sistem Python'una dokunmaz.
+Projeyi indirmeniz veya Git kurmanız gerekmez. Aşağıdaki tek satırı
+terminalinize yapıştırın. Kurulum eksik Python, Clang ve Go araçlarını kurar,
+uygulamayı izole bir ortama yerleştirir ve `confuser` komutunu PATH'e ekler.
+Son olarak üç dilde örnek kodları dönüştürüp sonuçlarını doğrular.
+
+İnternet bağlantısı gerekir. Sistem paketi eksikse Linux'ta sudo şifresi,
+Windows'ta yönetici onayı istenebilir. Windows C++ Build Tools kurulumu büyük
+bir indirme gerektirebilir; yeniden başlatma istenirse ardından aynı komutu
+tekrar çalıştırın. Kurulum ancak üç motorun kontrolü de geçerse başarılı sayılır.
 
 **Linux (Bash/Zsh; macOS'ta da kullanılabilir):**
 
 `curl` kurulu olmalıdır.
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh && . "$HOME/.local/bin/env" && uv tool install --python 3.14 --reinstall https://github.com/emin-eren-kadioglu/confuser-obfuser/archive/refs/heads/main.zip
+(set -o pipefail; curl -fsSL https://raw.githubusercontent.com/emin-eren-kadioglu/confuser-obfuser/main/install.sh | sh -s -- --from-github) && export PATH="$HOME/.local/bin:$PATH"
 ```
 
 **Windows 10/11 (PowerShell):**
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | iex"; if ($LASTEXITCODE -eq 0) { $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"; uv tool install --python 3.14 --reinstall https://github.com/emin-eren-kadioglu/confuser-obfuser/archive/refs/heads/main.zip }
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/emin-eren-kadioglu/confuser-obfuser/main/install.ps1 -ErrorAction Stop))) -FromGitHub
 ```
 
 Kurulum bitince aynı terminalde:
@@ -292,22 +296,21 @@ Argümansız çağrı etkileşimli menüyü açar. Doğrudan dosya dönüştürm
 confuser app.py -o app.obf.py --seed 42 --validate
 ```
 
-> Bu komutlar internetten uv'nin resmî kurucusunu çalıştırır ve bu deponun
-> `main` dalındaki kodu kurar. Yalnızca güvendiğiniz kaynaklardan kurulum yapın.
-> Özel uv/XDG kurulum dizinleri ayarladıysanız PATH adımını kendi dizininize
-> uyarlayın; yukarıdaki komutlar varsayılan kullanıcı dizinlerini kullanır.
+> Bu komutlar bu deponun `main` dalındaki mevcut kurulum betiğini çalıştırır.
+> Yalnızca güvendiğiniz kaynaklardan kurulum yapın. Kaynak arşivi geçici bir
+> klasöre indirilir ve işlem sonunda silinir; projeyi elle indirmeniz gerekmez.
 
-Python desteği kurulumla hazırdır. C için Clang, Go için Go SDK ayrıca gerekir;
-Windows'ta C doğrulaması için uyumlu bir C bağlayıcısı/SDK de gereklidir.
+Linux'ta `apt`, `dnf` veya `pacman`, macOS'ta Homebrew, Windows'ta WinGet
+kullanılır. WinGet eksikse Microsoft'un `Microsoft.WinGet.Client` modülüyle
+kurulması denenir. Dağıtımınızın depolarındaki araçlar yukarıdaki minimum
+sürümleri sağlamalıdır; Ubuntu için 24.04 veya daha yenisini kullanın.
 
-Güncellemek için aynı kurulum satırını tekrar çalıştırın. Kaldırmak için
-`uv tool uninstall confuser-obfuser` kullanın; bu işlem uv'yi veya Python'u silmez.
+Güncellemek için aynı kurulum satırını tekrar çalıştırın. Mevcut araçlar yeniden
+indirilmeden kontrol edilir; uygulama güncellenir ve üç dil testi tekrar yapılır.
 
-### Mevcut betiklerle kurulum (isteğe bağlı)
+### İndirilmiş kaynak klasöründen kurulum
 
-Clang ve Go'nun da kontrol edilip eksikse kurulmasını istiyorsanız, projeyi
-indirdikten sonra mevcut betikleri kullanabilirsiniz. Bu yöntem paket yöneticisine
-bağlı olarak yönetici yetkisi isteyebilir.
+Aynı kurulumu proje klasöründen de başlatabilirsiniz:
 
 macOS/Linux:
 
@@ -321,8 +324,10 @@ Windows PowerShell:
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-Bu eski kurulum yöntemi terminale `confuser-obfuser` çalıştırıcısını ekler.
-Yeni, kısa `confuser` komutu için yukarıdaki tek komutluk kurulumu kullanın.
+Her iki yöntem de `confuser` ve uyumluluk için `confuser-obfuser` komutlarını
+oluşturur. Linux/macOS'ta varsayılan uygulama dizini
+`~/.local/share/confuser-obfuser`, komut dizini `~/.local/bin` olur.
+Windows'ta uygulama `%LOCALAPPDATA%\ConfuserObfuser` altına kurulur.
 
 ### Pip ile kurulum
 

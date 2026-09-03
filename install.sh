@@ -3,6 +3,16 @@
 # Confuser Obfuser installer for macOS and Linux.
 set -eu
 
+if [ "${1:-}" = "--from-github" ]; then
+    source_tmp=$(mktemp -d "${TMPDIR:-/tmp}/confuser-source.XXXXXX")
+    trap 'rm -rf -- "$source_tmp"' 0
+    curl -fsSL https://github.com/emin-eren-kadioglu/confuser-obfuser/archive/refs/heads/main.tar.gz -o "$source_tmp/source.tar.gz"
+    mkdir "$source_tmp/source"
+    tar -xzf "$source_tmp/source.tar.gz" -C "$source_tmp/source" --strip-components=1
+    sh "$source_tmp/source/install.sh"
+    exit 0
+fi
+
 PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 INSTALL_ROOT=${CONFUSER_INSTALL_ROOT:-"$HOME/.local/share/confuser-obfuser"}
 USER_BIN=${CONFUSER_USER_BIN:-"$HOME/.local/bin"}
@@ -16,7 +26,22 @@ have() {
     command -v "$1" >/dev/null 2>&1
 }
 
+python_ready() {
+    have python3 && python3 -c 'import sys, venv, ensurepip; assert sys.version_info >= (3, 10)' >/dev/null 2>&1
+}
+
+as_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
 install_macos_tools() {
+    if python_ready && have clang && have go; then
+        return
+    fi
     if ! have brew; then
         say "Homebrew bulunamadı; resmi Homebrew kurucusu başlatılıyor..."
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -30,8 +55,10 @@ install_macos_tools() {
         say "Hata: Homebrew kurulamadı."
         exit 1
     fi
-    if ! have python3; then
+    if ! python_ready; then
         brew install python@3.14
+        PATH="$(brew --prefix python@3.14)/libexec/bin:$PATH"
+        export PATH
     fi
     if ! have go; then
         brew install go
@@ -46,18 +73,18 @@ install_macos_tools() {
 
 install_linux_tools() {
     missing=""
-    have python3 || missing="$missing python3"
+    python_ready || missing="$missing python3/venv/pip"
     have clang || missing="$missing clang"
     have go || missing="$missing go"
     [ -z "$missing" ] && return
 
     if have apt-get; then
-        sudo apt-get update
-        sudo apt-get install -y python3 python3-venv python3-pip clang golang-go
+        as_root apt-get update
+        as_root apt-get install -y python3 python3-venv python3-pip clang golang-go
     elif have dnf; then
-        sudo dnf install -y python3 python3-pip clang golang
+        as_root dnf install -y python3 python3-pip clang golang
     elif have pacman; then
-        sudo pacman -Sy --needed python python-pip clang go
+        as_root pacman -S --needed --noconfirm python python-pip clang go
     else
         say "Hata: Eksik araçlar:$missing"
         say "Desteklenen bir paket yöneticisi bulunamadı (apt, dnf veya pacman)."
@@ -81,15 +108,24 @@ for required_tool in python3 clang go; do
     fi
 done
 
+if ! python_ready; then
+    say "Hata: Python 3.10+ ve venv/pip desteği gerekiyor; dağıtımınızın paket sürümlerini kontrol edin."
+    exit 1
+fi
+
 say "İzole uygulama ortamı hazırlanıyor..."
 mkdir -p "$INSTALL_ROOT" "$USER_BIN"
 python3 -m venv "$INSTALL_ROOT/venv"
 "$INSTALL_ROOT/venv/bin/python" -m pip install --upgrade pip
 "$INSTALL_ROOT/venv/bin/python" -m pip install --upgrade "$PROJECT_DIR"
 
-WRAPPER="$USER_BIN/confuser-obfuser"
-printf '%s\n' '#!/bin/sh' "exec \"$INSTALL_ROOT/venv/bin/confuser-obfuser\" \"\$@\"" > "$WRAPPER"
-chmod 755 "$WRAPPER"
+for command_name in confuser confuser-obfuser; do
+    wrapper_tmp=$(mktemp "$USER_BIN/.confuser.XXXXXX")
+    printf '%s\n' '#!/bin/sh' "exec \"$INSTALL_ROOT/venv/bin/confuser\" \"\$@\"" > "$wrapper_tmp"
+    chmod 755 "$wrapper_tmp"
+    mv -f "$wrapper_tmp" "$USER_BIN/$command_name"
+done
+WRAPPER="$USER_BIN/confuser"
 
 case ":$PATH:" in
     *":$USER_BIN:"*) path_ready=1 ;;
@@ -131,6 +167,7 @@ if [ "$path_ready" -eq 0 ]; then
 fi
 
 CHECK_DIR=$(mktemp -d)
+trap 'rm -rf -- "$CHECK_DIR"' 0
 say "Python motoru kontrol ediliyor..."
 "$WRAPPER" "$PROJECT_DIR/examples/demo.py" -o "$CHECK_DIR/demo.obf.py" --seed 42 --validate
 say "C/Clang AST motoru kontrol ediliyor..."
@@ -141,8 +178,8 @@ say "Go AST motoru kontrol ediliyor..."
 say ""
 say "✓ Confuser Obfuser kuruldu ve üç motor doğrulandı."
 if [ "$path_ready" -eq 1 ]; then
-    say "Başlatmak için: confuser-obfuser"
+    say "Başlatmak için: confuser"
 else
-    say "Yeni bir terminal açıp çalıştır: confuser-obfuser"
+    say "Yeni bir terminal açıp çalıştır: confuser"
     say "Bu terminalde hemen kullanmak için: export PATH=\"$USER_BIN:\$PATH\""
 fi
